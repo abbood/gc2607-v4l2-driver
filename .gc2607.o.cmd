@@ -1231,6 +1231,16 @@ deps_gc2607.o := \
   /usr/lib/modules/6.17.9-arch1-1/build/arch/x86/include/asm/xen/interface_64.h \
   /usr/lib/modules/6.17.9-arch1-1/build/arch/x86/include/asm/pvclock-abi.h \
   /usr/lib/modules/6.17.9-arch1-1/build/arch/x86/include/asm/emulate_prefix.h \
+  /usr/lib/modules/6.17.9-arch1-1/build/include/linux/clk.h \
+    $(wildcard include/config/COMMON_CLK) \
+    $(wildcard include/config/HAVE_CLK_PREPARE) \
+    $(wildcard include/config/HAVE_CLK) \
+  /usr/lib/modules/6.17.9-arch1-1/build/include/linux/delay.h \
+  /usr/lib/modules/6.17.9-arch1-1/build/arch/x86/include/asm/delay.h \
+  /usr/lib/modules/6.17.9-arch1-1/build/include/asm-generic/delay.h \
+  /usr/lib/modules/6.17.9-arch1-1/build/include/linux/gpio/consumer.h \
+    $(wildcard include/config/HTE) \
+    $(wildcard include/config/GPIO_SYSFS) \
   /usr/lib/modules/6.17.9-arch1-1/build/include/linux/i2c.h \
     $(wildcard include/config/I2C) \
     $(wildcard include/config/I2C_SLAVE) \
@@ -1498,9 +1508,6 @@ deps_gc2607.o := \
   /usr/lib/modules/6.17.9-arch1-1/build/include/linux/spi/spi.h \
     $(wildcard include/config/SPI_SLAVE) \
     $(wildcard include/config/SPI_MASTER) \
-  /usr/lib/modules/6.17.9-arch1-1/build/include/linux/gpio/consumer.h \
-    $(wildcard include/config/HTE) \
-    $(wildcard include/config/GPIO_SYSFS) \
   /usr/lib/modules/6.17.9-arch1-1/build/include/uapi/linux/spi/spi.h \
   /usr/lib/modules/6.17.9-arch1-1/build/include/media/v4l2-fh.h \
   /usr/lib/modules/6.17.9-arch1-1/build/include/media/v4l2-mediabus.h \

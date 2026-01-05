@@ -10,15 +10,23 @@ This project is porting the GalaxyCore GC2607 camera sensor driver from the Inge
 - Laptop: Huawei MateBook Pro VGHH-XX
 - Sensor: GC2607 (1920x1080@30fps, MIPI CSI-2, RAW10)
 - Platform: Intel IPU6
-- PMIC: INT3472 discrete (intel_skl_int3472_discrete driver)
+- PMIC: INT3472:01 discrete (intel_skl_int3472_discrete driver)
 - I2C Bus: /dev/i2c-5
 - I2C Address: 0x37
 - Chip ID: 0x2607 (registers 0x03f0=0x26, 0x03f1=0x07)
 
 **ACPI Matching:**
 - Device name: GCTI2607:00
+- ACPI path: `\_SB_.PC00.LNK0`
 - Modalias: `acpi:GCTI2607:GCTI2607:`
 - The driver must use ACPI match table with "GCTI2607" HID
+
+**INT3472 PMIC Resources (INT3472:01 at `\_SB_.PC00.DSC0`):**
+- Regulator: `INT3472:01-avdd` (already enabled, 2 users)
+- Privacy LED: `GCTI2607_00::privacy_led` (confirms INT3472:01 controls GC2607)
+- GPIOs: Likely present but not exposed as standard GPIO chips
+- Clock: Possibly provided through GPIO-controlled fixed-rate clock
+- Status: Enabled (15), driver bound to `int3472-discrete`
 
 ## Architecture
 
@@ -94,18 +102,23 @@ sudo dmesg -w
 
 ## Implementation Phases
 
-**Phase 1 (Current):** Skeleton driver
+**Phase 1 (✅ COMPLETE):** Skeleton driver
 - I2C client registration with ACPI matching
 - Basic probe/remove with logging
 - Module metadata
 
-**Phase 2:** Power management
+**Phase 2 (🔄 IN PROGRESS):** Power management
 - INT3472 PMIC integration (GPIOs, regulators, clocks)
 - Power on/off sequences
+- ✅ Driver structure with resource handling complete
+- ✅ INT3472:01 identified as GC2607 PMIC
+- ⚠️  Testing needed: Run `sudo ./QUICK_TEST.sh` to verify sensor communication
+- Status: Driver loads but need to confirm sensor responds to I2C
 
 **Phase 3:** Sensor initialization
 - Register initialization from reference driver tables
-- Chip ID detection
+- Chip ID detection (0x2607 expected)
+- 280-register initialization sequence
 
 **Phase 4:** V4L2 integration
 - Subdev ops implementation
@@ -143,3 +156,43 @@ sudo dmesg -w
 - VTS (frame length): 0x0220 (high), 0x0221 (low)
 - HTS (line length): 0x0342 (high), 0x0343 (low)
 - Init sequence: 280 register writes in `gc2607_init_regs_1920_1080_30fps_mipi[]`
+
+## Current Status & Next Steps
+
+### Available Diagnostic Scripts
+- `QUICK_TEST.sh` - **Run this first!** Comprehensive driver test and status check
+- `test_driver.sh` - Automated driver load/unload test
+- `check_int3472.sh` - Check all INT3472 PMIC devices and bindings
+- `find_pmic_link.sh` - Identify which INT3472 belongs to GC2607
+- `analyze_int3472_gc2607.sh` - Analyze INT3472:01 resources
+- `extract_acpi.sh` - Extract ACPI DSDT tables for analysis
+
+### Current Documentation
+- `INT3472_INTEGRATION_ANALYSIS.md` - Deep technical analysis of INT3472 integration
+- `NEXT_STEPS.md` - Detailed next steps based on test scenarios
+- `PHASE2_FIX.md` - Phase 2 implementation details and troubleshooting
+- `TEST_PHASE2.md` - Earlier test results
+- This file (`CLAUDE.md`) - Project overview and instructions
+
+### Immediate Action Required
+**Run this command to test the driver:**
+```bash
+sudo ./QUICK_TEST.sh
+```
+
+This will determine if:
+1. ✅ Sensor responds (chip ID 0x2607 detected) → Move to Phase 3
+2. ⚠️  Driver loads but sensor doesn't respond → Add resource mappings
+3. ❌ Driver fails to load → Debug ACPI/I2C binding
+
+### Known Issues & Solutions
+- **Issue**: Driver may not automatically find INT3472 resources
+  - **Cause**: ACPI may not fully describe resource relationships
+  - **Solution**: May need GPIO lookup table or regulator consumer mapping
+  - **Reference**: See `INT3472_INTEGRATION_ANALYSIS.md` for detailed solutions
+
+### Files Modified/Created
+- `gc2607.c` - Main driver (Phase 2 complete, robust resource handling)
+- `Makefile` - Out-of-tree kernel module build
+- Multiple diagnostic scripts (see above)
+- Comprehensive documentation (see above)

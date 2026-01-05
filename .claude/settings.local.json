@@ -3,7 +3,20 @@
     "allow": [
       "WebSearch",
       "Bash(make clean:*)",
-      "Bash(make)"
+      "Bash(make)",
+      "Bash(lsmod:*)",
+      "Bash(sudo insmod:*)",
+      "Bash(sudo dmesg:*)",
+      "Bash(chmod:*)",
+      "Bash(./find_pmic_link.sh:*)",
+      "Bash(./extract_acpi.sh)",
+      "Bash(cat:*)",
+      "Bash(dmesg:*)",
+      "Bash(ls:*)",
+      "Bash(./analyze_int3472_gc2607.sh:*)",
+      "Bash(./test_driver.sh:*)",
+      "Bash(modinfo:*)",
+      "Bash(sudo ./QUICK_TEST.sh:*)"
     ]
   }
 }
