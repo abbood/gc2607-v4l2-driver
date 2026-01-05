@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(make clean:*)",
+      "Bash(make)"
     ]
   }
 }
