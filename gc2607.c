@@ -18,6 +18,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#include <media/v4l2-async.h>
 
 #define GC2607_CHIP_ID_H		0x26
 #define GC2607_CHIP_ID_L		0x07
@@ -28,10 +29,28 @@
 #define GC2607_REG_END			0xffff
 #define GC2607_REG_DELAY		0x0000
 
+/* Sensor timing - from reference driver */
+#define GC2607_PIXEL_RATE		(672000000LL / 10 * 2)  /* 134.4 MHz */
+#define GC2607_LINK_FREQ		336000000LL  /* 672 Mbps / 2 lanes */
+#define GC2607_HTS			2048
+#define GC2607_VTS			1335
+#define GC2607_WIDTH			1920
+#define GC2607_HEIGHT			1080
+
 /* Register value pair for initialization sequences */
 struct gc2607_regval {
 	u16 addr;
 	u8 val;
+};
+
+/* Sensor mode structure */
+struct gc2607_mode {
+	u32 width;
+	u32 height;
+	u32 hts;
+	u32 vts;
+	u32 max_fps;
+	const struct gc2607_regval *reg_list;
 };
 
 struct gc2607 {
@@ -41,12 +60,18 @@ struct gc2607 {
 
 	/* V4L2 controls */
 	struct v4l2_ctrl_handler ctrls;
+	struct v4l2_ctrl *link_freq;
+	struct v4l2_ctrl *pixel_rate;
 
 	/* Power management resources (provided by INT3472 PMIC) */
 	struct clk *xclk;		/* Master clock (typically 19.2 MHz) */
 	struct gpio_desc *reset_gpio;	/* Reset GPIO (active low) */
 	struct gpio_desc *powerdown_gpio; /* Power-down GPIO (if present) */
 	struct regulator_bulk_data supplies[3];
+
+	/* Current mode and format */
+	const struct gc2607_mode *cur_mode;
+	struct v4l2_mbus_framefmt fmt;
 
 	/* Device state */
 	bool streaming;
@@ -270,6 +295,23 @@ static const struct gc2607_regval gc2607_1080p_30fps_regs[] = {
 	{GC2607_REG_END, 0x00},
 };
 
+/* Supported sensor modes */
+static const struct gc2607_mode gc2607_modes[] = {
+	{
+		.width = GC2607_WIDTH,
+		.height = GC2607_HEIGHT,
+		.hts = GC2607_HTS,
+		.vts = GC2607_VTS,
+		.max_fps = 30,
+		.reg_list = gc2607_1080p_30fps_regs,
+	},
+};
+
+/* Link frequency menu items */
+static const s64 gc2607_link_freqs[] = {
+	GC2607_LINK_FREQ,
+};
+
 /*
  * Power management
  */
@@ -388,7 +430,89 @@ static void gc2607_power_off(struct gc2607 *gc2607)
 }
 
 /*
- * V4L2 subdev operations
+ * V4L2 subdev pad operations
+ */
+static int gc2607_enum_mbus_code(struct v4l2_subdev *sd,
+				  struct v4l2_subdev_state *sd_state,
+				  struct v4l2_subdev_mbus_code_enum *code)
+{
+	if (code->index > 0)
+		return -EINVAL;
+
+	code->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	return 0;
+}
+
+static int gc2607_enum_frame_size(struct v4l2_subdev *sd,
+				   struct v4l2_subdev_state *sd_state,
+				   struct v4l2_subdev_frame_size_enum *fse)
+{
+	if (fse->index >= ARRAY_SIZE(gc2607_modes))
+		return -EINVAL;
+
+	if (fse->code != MEDIA_BUS_FMT_SGRBG10_1X10)
+		return -EINVAL;
+
+	fse->min_width = gc2607_modes[fse->index].width;
+	fse->max_width = gc2607_modes[fse->index].width;
+	fse->min_height = gc2607_modes[fse->index].height;
+	fse->max_height = gc2607_modes[fse->index].height;
+
+	return 0;
+}
+
+static int gc2607_get_fmt(struct v4l2_subdev *sd,
+			   struct v4l2_subdev_state *sd_state,
+			   struct v4l2_subdev_format *format)
+{
+	struct gc2607 *gc2607 = to_gc2607(sd);
+	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
+
+	/* Only support ACTIVE format (TRY not implemented) */
+	mbus_fmt->width = gc2607->cur_mode->width;
+	mbus_fmt->height = gc2607->cur_mode->height;
+	mbus_fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	mbus_fmt->field = V4L2_FIELD_NONE;
+	mbus_fmt->colorspace = V4L2_COLORSPACE_RAW;
+
+	return 0;
+}
+
+static int gc2607_set_fmt(struct v4l2_subdev *sd,
+			   struct v4l2_subdev_state *sd_state,
+			   struct v4l2_subdev_format *format)
+{
+	struct gc2607 *gc2607 = to_gc2607(sd);
+	struct v4l2_mbus_framefmt *mbus_fmt = &format->format;
+	const struct gc2607_mode *mode;
+
+	/* Only support the default mode */
+	mode = &gc2607_modes[0];
+
+	mbus_fmt->width = mode->width;
+	mbus_fmt->height = mode->height;
+	mbus_fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	mbus_fmt->field = V4L2_FIELD_NONE;
+	mbus_fmt->colorspace = V4L2_COLORSPACE_RAW;
+
+	/* Only support ACTIVE format (TRY not implemented) */
+	if (format->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		gc2607->cur_mode = mode;
+		gc2607->fmt = *mbus_fmt;
+	}
+
+	return 0;
+}
+
+static const struct v4l2_subdev_pad_ops gc2607_pad_ops = {
+	.enum_mbus_code = gc2607_enum_mbus_code,
+	.enum_frame_size = gc2607_enum_frame_size,
+	.get_fmt = gc2607_get_fmt,
+	.set_fmt = gc2607_set_fmt,
+};
+
+/*
+ * V4L2 subdev video operations
  */
 static int gc2607_s_stream(struct v4l2_subdev *sd, int enable)
 {
@@ -403,8 +527,8 @@ static int gc2607_s_stream(struct v4l2_subdev *sd, int enable)
 
 		dev_info(&client->dev, "Initializing sensor registers...\n");
 
-		/* Write 1080p@30fps initialization sequence */
-		ret = gc2607_write_array(gc2607, gc2607_1080p_30fps_regs);
+		/* Write initialization sequence for current mode */
+		ret = gc2607_write_array(gc2607, gc2607->cur_mode->reg_list);
 		if (ret) {
 			dev_err(&client->dev, "Failed to initialize sensor: %d\n", ret);
 			pm_runtime_put(&client->dev);
@@ -428,6 +552,7 @@ static const struct v4l2_subdev_video_ops gc2607_video_ops = {
 
 static const struct v4l2_subdev_ops gc2607_subdev_ops = {
 	.video = &gc2607_video_ops,
+	.pad = &gc2607_pad_ops,
 };
 
 /*
@@ -588,8 +713,30 @@ static int gc2607_probe(struct i2c_client *client)
 		return ret;
 	}
 
-	/* Initialize control handler (empty for now) */
-	v4l2_ctrl_handler_init(&gc2607->ctrls, 0);
+	/* Initialize control handler with V4L2 controls */
+	v4l2_ctrl_handler_init(&gc2607->ctrls, 2);
+
+	/* Link frequency control (required by IPU6) */
+	gc2607->link_freq = v4l2_ctrl_new_int_menu(&gc2607->ctrls,
+						    NULL,
+						    V4L2_CID_LINK_FREQ,
+						    ARRAY_SIZE(gc2607_link_freqs) - 1,
+						    0,
+						    gc2607_link_freqs);
+	if (gc2607->link_freq)
+		gc2607->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	/* Pixel rate control (required by IPU6) */
+	gc2607->pixel_rate = v4l2_ctrl_new_std(&gc2607->ctrls,
+						NULL,
+						V4L2_CID_PIXEL_RATE,
+						GC2607_PIXEL_RATE,
+						GC2607_PIXEL_RATE,
+						1,
+						GC2607_PIXEL_RATE);
+	if (gc2607->pixel_rate)
+		gc2607->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
 	gc2607->sd.ctrl_handler = &gc2607->ctrls;
 
 	if (gc2607->ctrls.error) {
@@ -597,6 +744,14 @@ static int gc2607_probe(struct i2c_client *client)
 		dev_err(dev, "Control handler init failed: %d\n", ret);
 		goto err_media;
 	}
+
+	/* Initialize current mode and format */
+	gc2607->cur_mode = &gc2607_modes[0];
+	gc2607->fmt.width = gc2607->cur_mode->width;
+	gc2607->fmt.height = gc2607->cur_mode->height;
+	gc2607->fmt.code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	gc2607->fmt.field = V4L2_FIELD_NONE;
+	gc2607->fmt.colorspace = V4L2_COLORSPACE_RAW;
 
 	/* Enable runtime PM */
 	pm_runtime_set_active(dev);
@@ -619,9 +774,19 @@ static int gc2607_probe(struct i2c_client *client)
 	/* Power off after detection */
 	pm_runtime_put(dev);
 
+	/* Register async subdev for IPU6 integration */
+	ret = v4l2_async_register_subdev(&gc2607->sd);
+	if (ret) {
+		dev_err(dev, "Failed to register async subdev: %d\n", ret);
+		goto err_power;
+	}
+
 	dev_info(dev, "GC2607 probe successful\n");
 	dev_info(dev, "  I2C address: 0x%02x\n", client->addr);
 	dev_info(dev, "  I2C adapter: %s\n", client->adapter->name);
+	dev_info(dev, "  Format: SGRBG10 %ux%u@%ufps\n",
+		 gc2607->cur_mode->width, gc2607->cur_mode->height,
+		 gc2607->cur_mode->max_fps);
 
 	return 0;
 
