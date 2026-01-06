@@ -16,7 +16,8 @@
       "Bash(./analyze_int3472_gc2607.sh:*)",
       "Bash(./test_driver.sh:*)",
       "Bash(modinfo:*)",
-      "Bash(sudo ./QUICK_TEST.sh:*)"
+      "Bash(sudo ./QUICK_TEST.sh:*)",
+      "Bash(zstd:*)"
     ]
   }
 }
