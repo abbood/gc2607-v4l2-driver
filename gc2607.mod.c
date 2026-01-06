@@ -20,4 +20,4 @@ MODULE_INFO(depends, "v4l2-async,videodev,mc");
 MODULE_ALIAS("i2c:gc2607");
 MODULE_ALIAS("acpi*:GCTI2607:*");
 
-MODULE_INFO(srcversion, "B0631F8A3D50F4B09E8F3ED");
+MODULE_INFO(srcversion, "54385C0ED3ED69D1AC2A35D");

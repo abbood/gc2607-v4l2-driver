@@ -143,15 +143,16 @@ sudo ./investigate_ipu_bridge.sh
 - V4L2 format negotiation ready
 - Async subdev registered
 
-### Phase 5: IPU6 Bridge Integration ⏳ AWAITING REBOOT TEST
-**Status:** Modified ipu_bridge module installed, awaiting clean boot test
+### Phase 5: IPU6 Bridge Integration ✅ COMPLETE
+**Status:** Fully working - Camera integrated with IPU6
 
 **What Was Completed:**
 1. ✅ Downloaded Linux kernel 6.17.9 source to ~/kernel/dev
 2. ✅ Modified `drivers/media/pci/intel/ipu-bridge.c` to add GC2607 support
 3. ✅ Successfully compiled modified ipu_bridge module (511KB)
 4. ✅ Installed modified module with GC2607 (GCTI2607) support
-5. ⏳ **NEEDS REBOOT** - Module installed but requires clean system boot to test
+5. ✅ Camera detected by IPU6 bridge
+6. ✅ Media pipeline established and working
 
 **Modification Made:**
 Added to `/home/abbood/kernel/dev/linux-6.17.9/drivers/media/pci/intel/ipu-bridge.c` at line 52:
@@ -166,55 +167,58 @@ IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000),
 - `install_ipu_bridge.sh` - Installs modified module (✅ COMPLETED)
 - `reload_ipu_modules.sh` - Reloads IPU modules (had device busy errors)
 
-**Current Situation:**
-- Modified ipu_bridge.ko.zst installed at: `/lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/`
-- Backup saved: `ipu-bridge.ko.zst.backup.20260106_061018`
-- Module verified to contain "GCTI2607" string
-- Hot-reload had "Device or resource busy" errors
-- **System reboot required for clean module load**
+**Key Achievements:**
+- ✅ Modified ipu_bridge.ko successfully compiled and installed
+- ✅ IPU6 bridge recognizes GCTI2607 sensor
+- ✅ Media pipeline established: gc2607 → Intel IPU6 CSI2 0 → /dev/video0
+- ✅ V4L2 subdev created at /dev/v4l-subdev6
 
-**IMMEDIATE POST-REBOOT ACTIONS:**
-After rebooting, run these commands immediately:
+**Critical Fix Required:**
+Added `V4L2_SUBDEV_FL_HAS_DEVNODE` flag to gc2607 driver to create /dev/v4l-subdev device node for sensor.
 
+### Phase 6: Image Capture ✅ COMPLETE
+**Status:** Fully working - Camera successfully capturing images!
+
+**Steps to Success:**
+1. ✅ Loaded all required modules (videodev, ipu_bridge, intel-ipu6, intel-ipu6-isys, gc2607)
+2. ✅ Enabled media link: `media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'`
+3. ✅ Fixed format mismatch: Changed video0 from GB10 to BA10 (GRBG) to match sensor output
+4. ✅ Captured first image successfully!
+
+**Format Configuration:**
+- Sensor output: SGRBG10_1X10 (0x300a) - GRBG Bayer pattern
+- Video device: BA10 pixel format (10-bit Bayer GRGR/BGBG)
+- Resolution: 1920x1080
+- Link frequency: 336 MHz
+- Pixel rate: 134.4 MHz
+
+**Capture Commands:**
 ```bash
-cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
+# Set correct pixel format (BA10 for GRBG pattern)
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
 
-# Load GC2607 driver
-sudo insmod gc2607.ko
+# Enable media link
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
 
-# Check if GC2607 appears in media topology (THE MOMENT OF TRUTH!)
-media-ctl --print-topology | grep -i gc2607
+# Capture image
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=capture.raw
 
-# If found, view full topology
-media-ctl -d /dev/media0 --print-topology
+# Convert to viewable PNG (with brightness boost and rotation)
+./view_raw_bright.py capture.raw 5.0
 
-# Check kernel messages
-sudo dmesg | grep -E "ipu_bridge|gc2607|GCTI2607" | tail -30
+# View image
+feh capture.png
 ```
 
-**Expected Success Indicators:**
-✅ `media-ctl --print-topology | grep -i gc2607` shows output
-✅ GC2607 connected to IPU6 CSI-2 receiver in topology
-✅ Media pipeline can be configured
-✅ Camera device appears as /dev/v4l-subdevX
+**Known Issues & Solutions:**
+1. **Image too dark**: Use `view_raw_bright.py` with brightness multiplier (3.0-8.0)
+2. **Image upside down**: `view_raw_bright.py` automatically flips the image
+3. **Privacy slider**: Check laptop for physical camera privacy slider/cover
 
-**If It Works:**
-Phase 5 is COMPLETE! Camera is fully integrated with IPU6.
-Next: Configure media pipeline and attempt image capture.
-
-**If It Doesn't Work:**
-Check dmesg for errors, verify ipu_bridge loaded with new version:
-```bash
-modinfo ipu_bridge
-sudo dmesg | grep ipu_bridge
-```
-
-**Investigation History:**
-- IPU6 driver confirmed working (6 CSI2 receivers, 48 capture devices)
-- Media controller active (/dev/media0)
-- Root cause identified: `ipu_bridge` only knew OmniVision sensors (OVTI*)
-- GalaxyCore sensors (GCTI2607, GCTI1029) were not in bridge's sensor database
-- Solution: Added GCTI2607 to sensor configuration array
+**Files Created:**
+- `view_raw.py` - Basic raw Bayer to PNG converter
+- `view_raw_bright.py` - Converter with brightness boost and auto-flip
+- `compile_ipu_bridge_simple.sh` - Simplified single-module build script
 
 ## Key Differences from Reference Driver
 
@@ -286,33 +290,38 @@ sudo dmesg | grep ipu_bridge
 
 ## Known Issues & Solutions
 
-### Issue: Sensor Not in Media Topology
-- **Symptom**: GC2607 probes successfully but doesn't appear in `media-ctl --print-topology`
-- **Root Cause**: `ipu_bridge` module doesn't recognize GCTI2607
-- **Solution**: Add GC2607 to ipu_bridge sensor database (Phase 5)
-- **Status**: Identified, solution in progress
+### Issue: Format Mismatch Error
+- **Symptom**: `VIDIOC_STREAMON` fails with "format mismatch 1920x1080,300a != 1920x1080,300e"
+- **Root Cause**: Video device pixel format (GB10) doesn't match sensor output (SGRBG10)
+- **Solution**: Use BA10 pixel format on video0 to match sensor's GRBG pattern
+- **Status**: ✅ RESOLVED
 
 ### Issue: Dummy Regulators
 - **Symptom**: Driver reports "supply dovdd not found, using dummy regulator"
 - **Impact**: None - INT3472 PMIC handles power internally
 - **Status**: Expected behavior, sensor works correctly
 
+### Issue: Dark Images
+- **Symptom**: Captured images are very dark
+- **Root Cause**: No exposure/gain controls implemented yet
+- **Workaround**: Use `view_raw_bright.py` with brightness multiplier (3.0-8.0)
+- **Future**: Implement V4L2 exposure and gain controls
+
 ## Hardware Verification
 
-### Confirmed Working:
+### Fully Confirmed Working:
 - ✅ ACPI device detection (GCTI2607:00 status=15)
 - ✅ I2C communication (chip ID 0x2607 read successfully)
 - ✅ Reset GPIO control via INT3472:01
 - ✅ Clock provision (19.2 MHz)
 - ✅ Power sequencing
 - ✅ Register initialization (122 registers)
-- ✅ V4L2 subdev registration
+- ✅ V4L2 subdev registration with device node (/dev/v4l-subdev6)
 - ✅ Async subdev registration
-
-### Pending:
-- ⏳ IPU6 media controller binding (needs ipu_bridge update)
-- ⏳ Actual camera streaming test
-- ⏳ Image capture verification
+- ✅ IPU6 media controller integration
+- ✅ MIPI CSI-2 data transmission (2 lanes, 336 MHz link frequency)
+- ✅ Image capture and streaming
+- ✅ Frame buffer management
 
 ## Other Sensors on This Laptop
 
@@ -325,36 +334,59 @@ ACPI scan revealed multiple camera sensors:
 
 This laptop has a multi-camera setup with at least 4 sensors.
 
-## Future Enhancements (Post-Phase 5)
+## Future Enhancements
 
-Once camera is streaming, potential improvements:
-- Exposure control implementation
-- Gain control with LUT
-- Multiple resolution support
-- Frame rate control
+The camera is now fully functional! Potential improvements:
+
+**High Priority:**
+- Exposure control implementation (V4L2_CID_EXPOSURE)
+- Gain control with LUT (V4L2_CID_ANALOGUE_GAIN)
+- Auto white balance
+- Better Bayer demosaicing algorithm
+
+**Medium Priority:**
+- Multiple resolution support (currently fixed at 1920x1080)
+- Frame rate control (currently fixed at 30fps)
+- Test pattern mode for debugging
+- Privacy LED control integration
+
+**Low Priority:**
 - Auto-focus integration (if VCM present)
-- Privacy LED control
+- HDR support
+- Advanced ISP features
 
 ## Quick Start Guide
 
-**To test the driver right now:**
+**Build the driver:**
 ```bash
-# Build
 make
-
-# Test Phase 4 (current status)
-sudo ./test_phase4.sh
-
-# Expected result: ✅ Probe successful, chip ID detected, format ready
 ```
 
-**To add IPU6 support (Phase 5):**
+**Load modules and capture an image:**
 ```bash
-# Download kernel source to ~/kernel/dev
-# Modify ipu-bridge.c to add GCTI2607
-# Recompile ipu_bridge module
-# Reload and test media topology
+# Load V4L2 and IPU6 modules
+sudo modprobe videodev
+sudo modprobe v4l2-async
+sudo modprobe ipu_bridge
+sudo modprobe intel-ipu6
+sudo modprobe intel-ipu6-isys
+
+# Load GC2607 driver
+sudo insmod gc2607.ko
+
+# Configure format and enable link
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+
+# Capture image
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.raw
+
+# Convert and view
+./view_raw_bright.py test.raw 5.0
+feh test.png
 ```
+
+**Note:** First-time setup requires installing the modified ipu_bridge module (see Phase 5).
 
 ## Contact & References
 
@@ -362,7 +394,9 @@ sudo ./test_phase4.sh
 - Linux kernel source: https://kernel.org
 - V4L2 documentation: https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/v4l2.html
 - Intel IPU6 documentation: Linux kernel drivers/media/pci/intel/
+- Media controller documentation: https://www.kernel.org/doc/html/latest/userspace-api/media/mediactl/media-controller.html
 
-**Current Status:** Driver fully functional, waiting for ipu_bridge integration
-**Last Updated:** January 2026
+**Project Status:** ✅ FULLY FUNCTIONAL - Camera driver complete and capturing images!
+**Last Updated:** January 6, 2026
 **Kernel Version:** 6.17.9-arch1-1
+**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration

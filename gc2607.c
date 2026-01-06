@@ -703,6 +703,7 @@ static int gc2607_probe(struct i2c_client *client)
 
 	/* Initialize V4L2 subdev */
 	v4l2_i2c_subdev_init(&gc2607->sd, client, &gc2607_subdev_ops);
+	gc2607->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 
 	/* Initialize media pad */
 	gc2607->pad.flags = MEDIA_PAD_FL_SOURCE;

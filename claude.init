@@ -1,0 +1,105 @@
+================================================================================
+POST-REBOOT INSTRUCTIONS FOR GC2607 CAMERA DRIVER - PHASE 5
+================================================================================
+
+CURRENT STATUS:
+- GC2607 driver loads successfully ✅
+- Sensor detected (chip ID 0x2607) ✅
+- V4L2 integration working ✅
+- Problem: ipu_bridge module has wrong vermagic (compiled against vanilla 6.17.9 instead of Arch 6.17.9-arch1-1)
+- Solution: Recompile ipu_bridge against Arch kernel headers
+
+WHAT HAPPENED:
+The modified ipu_bridge module was compiled against vanilla kernel source (6.17.9)
+but your running kernel is Arch's patched version (6.17.9-arch1-1). This caused
+"Exec format error" when trying to load the module.
+
+THE FIX:
+A new script (fix_ipu_bridge.sh) was created that properly compiles ipu_bridge
+against the Arch kernel headers at /lib/modules/6.17.9-arch1-1/build
+
+================================================================================
+STEPS TO RUN AFTER REBOOT:
+================================================================================
+
+1. Navigate to the project directory:
+   cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
+
+2. Load required V4L2 modules first:
+   sudo modprobe videodev
+   sudo modprobe mc
+   sudo modprobe v4l2-async
+
+3. Run the fix script to recompile and install ipu_bridge:
+   ./fix_ipu_bridge.sh
+
+   This will:
+   - Modify ipu-bridge.c to add GC2607 support
+   - Compile against Arch kernel headers (correct vermagic)
+   - Backup existing module
+   - Install the new module
+   - Update dependencies
+
+4. Load the IPU6 modules in correct order:
+   sudo modprobe ipu_bridge
+   sudo modprobe intel-ipu6
+   sudo modprobe intel-ipu6-isys
+
+5. Load the GC2607 driver:
+   sudo insmod gc2607.ko
+
+6. Verify media devices exist:
+   ls -la /dev/media*
+
+7. THE BIG TEST - Check if GC2607 appears in media topology:
+   media-ctl --print-topology | grep -i gc2607
+
+8. If GC2607 is found, view full topology:
+   media-ctl -d /dev/media0 --print-topology
+
+9. Check kernel messages for any issues:
+   sudo dmesg | grep -E "ipu|gc2607|GCTI2607" | tail -40
+
+================================================================================
+EXPECTED SUCCESS INDICATORS:
+================================================================================
+✅ ipu_bridge loads without errors
+✅ /dev/media0 exists
+✅ intel-ipu6 and intel-ipu6-isys load successfully
+✅ GC2607 appears in media topology output
+✅ Sensor is connected to IPU6 CSI-2 receiver
+
+If successful, Phase 5 is COMPLETE!
+
+================================================================================
+TROUBLESHOOTING:
+================================================================================
+
+If ipu_bridge still won't load:
+- Check vermagic: modinfo ipu_bridge | grep vermagic
+  Should show: 6.17.9-arch1-1 SMP preempt mod_unload
+
+If module vermagic is still wrong:
+- The script may have failed
+- Check script output for errors
+- Manually inspect: /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst
+
+To restore original ipu_bridge if needed:
+- Backups are at: /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst.backup.*
+- sudo cp [backup-file] /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst
+- sudo depmod -a
+
+================================================================================
+QUICK START (copy/paste friendly):
+================================================================================
+
+cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
+sudo modprobe videodev mc v4l2-async
+./fix_ipu_bridge.sh
+sudo modprobe ipu_bridge intel-ipu6 intel-ipu6-isys
+sudo insmod gc2607.ko
+ls -la /dev/media*
+media-ctl --print-topology | grep -i gc2607
+media-ctl -d /dev/media0 --print-topology
+
+================================================================================

@@ -1,174 +1,270 @@
-# GC2607 V4L2 Camera Driver for Intel IPU6
+# GC2607 Camera Driver for Linux
 
-Linux V4L2 camera sensor driver for GalaxyCore GC2607 on Intel IPU6 platform (Huawei MateBook Pro).
+A fully functional Linux V4L2 driver for the GalaxyCore GC2607 camera sensor, integrated with Intel IPU6 on x86_64 systems.
 
-## Status
+## Overview
 
-**Driver:** ✅ Fully Functional | **IPU6 Integration:** ⏳ Awaiting Reboot Test (Phase 5)
+This driver successfully ports the GC2607 sensor from embedded platforms to mainline Linux, enabling camera functionality on laptops with Intel IPU6 that use this sensor.
 
-- ✅ Phase 1: Skeleton driver with ACPI binding
-- ✅ Phase 2: Power management and sensor detection (chip ID 0x2607 verified)
-- ✅ Phase 3: Register initialization (122 registers)
-- ✅ Phase 4: V4L2 integration (async subdev, pad ops, controls)
-- ⏳ Phase 5: IPU6 bridge modified and installed - **REBOOT REQUIRED TO TEST**
+**Status:** ✅ **FULLY FUNCTIONAL** - Successfully capturing images!
 
-## Quick Start
-
-### Build and Test
-```bash
-# Build the driver
-make
-
-# Run comprehensive test
-sudo ./test_phase4.sh
-
-# Expected: ✅ Probe successful, chip ID detected, format configured
-```
-
-### Test IPU6 Integration
-```bash
-# Check if camera appears in media topology
-sudo ./test_camera_streaming.sh
-
-# Current status: Driver works, waiting for ipu_bridge support
-```
-
-## Hardware
+### Supported Hardware
 
 - **Sensor:** GalaxyCore GC2607
-- **Resolution:** 1920x1080@30fps
-- **Format:** SGRBG10 (Bayer GRBG 10-bit)
+- **Platform:** Intel IPU6 (tested on Huawei MateBook Pro VGHH-XX)
 - **Interface:** MIPI CSI-2 (2 lanes, 672 Mbps/lane)
-- **Platform:** Intel IPU6
-- **I2C:** Bus 5, Address 0x37
-- **PMIC:** INT3472:01
+- **Resolution:** 1920x1080 @ 30fps
+- **Format:** 10-bit RAW Bayer (GRBG pattern)
+- **ACPI HID:** GCTI2607
 
-## What Works
+## Project Status
 
-✅ **Driver Fully Functional:**
-- ACPI device binding (GCTI2607)
-- I2C communication
-- Sensor detection (chip ID: 0x2607)
-- Power management via INT3472 PMIC
-- Reset GPIO control with proper timing
-- Clock provision (19.2 MHz)
-- V4L2 pad operations
-- Format negotiation (SGRBG10 1920x1080)
-- V4L2 controls (link_freq=336MHz, pixel_rate=134.4MHz)
-- Async subdev registration
+- ✅ Phase 1: Skeleton driver with ACPI binding
+- ✅ Phase 2: Power management and sensor detection
+- ✅ Phase 3: Register initialization (122 registers)
+- ✅ Phase 4: V4L2 integration (async subdev, pad ops, controls)
+- ✅ Phase 5: IPU6 bridge integration
+- ✅ Phase 6: Image capture and streaming **SUCCESS!**
 
-⏳ **Waiting for IPU6 Bridge:**
-- Media controller integration
-- Actual camera streaming
-- Image capture
+## Features
 
-## Next Steps - POST-REBOOT TESTING
+✅ Full V4L2 subdev integration
+✅ Intel IPU6 media controller support
+✅ MIPI CSI-2 interface (2 lanes @ 336 MHz)
+✅ 1920x1080 @ 30fps capture
+✅ 10-bit RAW Bayer output
+✅ Power management via INT3472 PMIC
+✅ Runtime PM support
+✅ Proper reset sequencing
 
-The modified `ipu_bridge` module has been installed with GC2607 support. **A system reboot is required** to cleanly load the new module.
+## Prerequisites
 
-**After Rebooting, Run These Commands:**
+### Required Packages (Arch Linux)
 
 ```bash
-cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
-
-# Load GC2607 driver
-sudo insmod gc2607.ko
-
-# THE MOMENT OF TRUTH - Check if GC2607 appears in media topology!
-media-ctl --print-topology | grep -i gc2607
-
-# If successful, view full topology
-media-ctl -d /dev/media0 --print-topology
-
-# Check kernel messages
-sudo dmesg | grep -E "ipu_bridge|gc2607|GCTI2607" | tail -30
+sudo pacman -S base-devel linux-headers v4l-utils media-ctl python-pillow python-numpy feh
 ```
 
-**What Was Done:**
-1. ✅ Downloaded Linux 6.17.9 kernel source to ~/kernel/dev
-2. ✅ Modified `drivers/media/pci/intel/ipu-bridge.c` to add: `IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000),`
-3. ✅ Compiled and installed modified ipu_bridge module
-4. ⏳ **Awaiting reboot to test**
+### Modified IPU6 Bridge Module
 
-If GC2607 appears in the media topology after reboot, **Phase 5 is COMPLETE!**
+**Important:** This driver requires a modified `ipu_bridge` kernel module that recognizes the GC2607 sensor.
 
-See **CLAUDE.md** for complete status and details.
+#### Installation
 
-## Documentation
+```bash
+# 1. Run the setup script to download kernel source
+./setup_ipu_bridge_mod.sh
 
-- **[CLAUDE.md](CLAUDE.md)** - Complete project documentation and guide
-- **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Development summary and achievements
-- **[INT3472_INTEGRATION_ANALYSIS.md](INT3472_INTEGRATION_ANALYSIS.md)** - PMIC integration details
+# 2. Compile the modified bridge module
+./compile_ipu_bridge_simple.sh
 
-## Test Scripts
+# The script will automatically:
+# - Add GCTI2607 support to ipu-bridge.c
+# - Compile against your running kernel
+# - Install the modified module
+# - Create a backup of the original
+```
 
-- `test_phase4.sh` - Verify V4L2 integration (recommended)
-- `test_camera_streaming.sh` - Check IPU6 integration
-- `investigate_ipu_bridge.sh` - Analyze bridge sensor support
-- `QUICK_TEST.sh` - Quick functionality test
+## Building the Driver
+
+```bash
+make
+```
+
+## Usage
+
+### Quick Start - Capture Your First Image
+
+```bash
+# 1. Load required kernel modules
+sudo modprobe videodev
+sudo modprobe v4l2-async
+sudo modprobe ipu_bridge
+sudo modprobe intel-ipu6
+sudo modprobe intel-ipu6-isys
+
+# 2. Load the GC2607 driver
+sudo insmod gc2607.ko
+
+# 3. Verify the sensor is detected
+media-ctl -d /dev/media0 --print-topology | grep gc2607
+# You should see: - entity 349: gc2607 5-0037 (...)
+
+# 4. Configure the video device format
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+
+# 5. Enable the media pipeline link
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+
+# 6. Capture an image
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=capture.raw
+
+# 7. Convert RAW to viewable PNG (with brightness boost)
+./view_raw_bright.py capture.raw 5.0
+
+# 8. View the image
+feh capture.png
+```
+
+### Automated Capture Script
+
+For convenience, you can create a script:
+
+```bash
+#!/bin/bash
+# capture.sh - Quick capture script
+
+# Configure and capture
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=capture_$(date +%s).raw
+
+# Convert last captured image
+LATEST=$(ls -t capture_*.raw | head -1)
+./view_raw_bright.py "$LATEST" 5.0
+feh "${LATEST%.raw}.png"
+```
+
+## Troubleshooting
+
+### Image is too dark
+The driver doesn't yet implement exposure/gain controls. Use the brightness parameter:
+```bash
+./view_raw_bright.py capture.raw 8.0  # Try values between 3.0 and 10.0
+```
+
+### Image is all black
+Check if your laptop has a physical camera privacy slider/cover. Many laptops include a hardware privacy mechanism.
+
+### "Link has been severed" error
+The media link isn't enabled. Run:
+```bash
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+```
+
+### "Format mismatch" error
+Ensure you're using the BA10 pixel format (GRBG Bayer):
+```bash
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+```
+
+### Sensor not detected
+1. Check that ipu_bridge recognizes GCTI2607:
+   ```bash
+   sudo dmesg | grep -i "GCTI2607\|gc2607"
+   ```
+2. Verify the modified ipu_bridge is loaded:
+   ```bash
+   modinfo ipu_bridge
+   strings /lib/modules/$(uname -r)/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst | grep GCTI2607
+   ```
+
+## Architecture
+
+### Media Pipeline
+
+```
+┌─────────────┐      ┌──────────────────┐      ┌─────────────────────┐
+│  gc2607     │      │ Intel IPU6 CSI2 0│      │ Intel IPU6 ISYS     │
+│  5-0037     │─────▶│  (MIPI Receiver) │─────▶│ Capture 0           │
+│ (Sensor)    │      │  /dev/v4l-subdev0│      │ /dev/video0         │
+└─────────────┘      └──────────────────┘      └─────────────────────┘
+ /dev/v4l-subdev6
+   SGRBG10_1X10           SGRBG10_1X10              BA10 (GRBG)
+   1920x1080              1920x1080                 1920x1080
+```
+
+### Key Components
+
+- **gc2607.c** - Main driver (V4L2 subdev, power management, register initialization)
+- **ipu-bridge.c** - Modified to recognize GCTI2607 sensor
+- **view_raw_bright.py** - RAW Bayer to PNG converter with brightness boost
+- **compile_ipu_bridge_simple.sh** - Builds modified ipu_bridge module
 
 ## Technical Details
 
-**Driver Configuration:**
-```
-Format: MEDIA_BUS_FMT_SGRBG10_1X10
-Resolution: 1920x1080
-Frame Rate: 30 fps
-MIPI Lanes: 2
-Link Frequency: 336 MHz
-Pixel Rate: 134.4 MHz
-Register Init: 122 registers
-```
+### Sensor Specifications
+- **Resolution:** 1920x1080
+- **Frame Rate:** 30 fps
+- **Bit Depth:** 10-bit RAW
+- **Bayer Pattern:** GRBG (MEDIA_BUS_FMT_SGRBG10_1X10)
+- **I2C Address:** 0x37
+- **Chip ID:** 0x2607
 
-**Key Files:**
-- `gc2607.c` - Main driver implementation (~800 LOC)
-- `Makefile` - Out-of-tree kernel module build
-- `reference/gc2607.c` - Original Ingenic T41 driver
+### MIPI Configuration
+- **Lanes:** 2
+- **Link Frequency:** 336 MHz
+- **Data Rate:** 672 Mbps/lane
+- **Pixel Rate:** 134.4 MHz
 
-## Building
+### Power Management
+- **PMIC:** INT3472:01 (intel_skl_int3472_discrete)
+- **Clock:** 19.2 MHz from platform
+- **Regulators:** avdd (INT3472:01), dovdd (dummy), dvdd (dummy)
+- **Reset GPIO:** Provided by INT3472 PMIC
+- **Reset Sequence:** HIGH (20ms) → LOW (20ms) → HIGH (10ms)
 
-```bash
-# Build module
-make
+## Test Scripts
 
-# Clean
-make clean
+- `test_phase4.sh` - Verify V4L2 integration
+- `test_camera_streaming.sh` - Check IPU6 integration
+- `investigate_ipu_bridge.sh` - Analyze bridge sensor support
+- `QUICK_TEST.sh` - Quick functionality test
+- `view_raw.py` - Basic RAW converter
+- `view_raw_bright.py` - RAW converter with brightness boost
 
-# Install (optional)
-sudo make install
-```
+## Future Enhancements
 
-## Loading
+The driver is fully functional for basic image capture. Planned improvements include:
 
-```bash
-# Load module
-sudo insmod gc2607.ko
+**High Priority:**
+- Exposure control (V4L2_CID_EXPOSURE)
+- Analog gain control (V4L2_CID_ANALOGUE_GAIN)
+- Auto white balance
+- Improved demosaicing algorithm
 
-# Check status
-dmesg | grep gc2607
+**Medium Priority:**
+- Multiple resolution support
+- Frame rate control
+- Test pattern mode
 
-# Unload
-sudo rmmod gc2607
-```
+**Low Priority:**
+- Auto-focus support (if VCM present)
+- HDR support
+
+## Documentation
+
+- **[CLAUDE.md](CLAUDE.md)** - Complete development guide and technical details
+- **[INT3472_INTEGRATION_ANALYSIS.md](INT3472_INTEGRATION_ANALYSIS.md)** - PMIC integration analysis
+
+## References
+
+- [V4L2 Documentation](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/v4l2.html)
+- [Media Controller Documentation](https://www.kernel.org/doc/html/latest/userspace-api/media/mediactl/media-controller.html)
+- [Intel IPU6 Driver](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/drivers/media/pci/intel)
 
 ## License
 
-GPL-2.0 (Linux Kernel Module)
+This driver is released under the GPL-2.0 license, consistent with the Linux kernel.
 
-## Credits
+## Contributing
 
-- Based on GalaxyCore GC2607 reference driver for Ingenic T41
-- Uses Intel IPU6 ACPI PMIC framework (INT3472)
-- Follows Linux V4L2 sensor driver patterns
+Contributions welcome! Areas of interest:
+- Exposure/gain control implementation
+- Multi-resolution support
+- Other GalaxyCore sensors (GC1029, etc.)
+- Testing on different hardware platforms
 
-## Development Notes
+## Acknowledgments
 
-This driver was developed incrementally through 5 phases with comprehensive testing at each stage. The driver itself is production-ready; integration with IPU6 media controller requires one kernel module modification (adding GCTI2607 to ipu_bridge sensor database).
-
-For development context and detailed implementation notes, see **[CLAUDE.md](CLAUDE.md)**.
+- Reference driver from Ingenic T41 platform
+- Linux kernel V4L2 subsystem documentation
+- Intel IPU6 driver developers
 
 ---
 
+**Status:** ✅ Production ready for basic image capture
+**Tested on:** Huawei MateBook Pro VGHH-XX
+**Kernel:** 6.17.9-arch1-1
 **Last Updated:** January 6, 2026
-**Kernel Version:** 6.17.9-arch1-1
-**Status:** Driver Complete, Bridge Integration Pending
+**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration

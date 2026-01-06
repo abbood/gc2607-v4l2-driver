@@ -19,7 +19,11 @@
       "Bash(sudo ./QUICK_TEST.sh:*)",
       "Bash(zstd:*)",
       "Bash(./compile_ipu_bridge.sh)",
-      "Bash(sudo pacman:*)"
+      "Bash(sudo pacman:*)",
+      "Bash(sudo modprobe:*)",
+      "Bash(pacman:*)",
+      "Bash(v4l2-ctl:*)",
+      "Bash(media-ctl:*)"
     ]
   }
 }
