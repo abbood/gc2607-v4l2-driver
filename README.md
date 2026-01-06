@@ -4,13 +4,13 @@ Linux V4L2 camera sensor driver for GalaxyCore GC2607 on Intel IPU6 platform (Hu
 
 ## Status
 
-**Driver:** ✅ Fully Functional | **IPU6 Integration:** 🔄 In Progress (Phase 5)
+**Driver:** ✅ Fully Functional | **IPU6 Integration:** ⏳ Awaiting Reboot Test (Phase 5)
 
 - ✅ Phase 1: Skeleton driver with ACPI binding
 - ✅ Phase 2: Power management and sensor detection (chip ID 0x2607 verified)
 - ✅ Phase 3: Register initialization (122 registers)
 - ✅ Phase 4: V4L2 integration (async subdev, pad ops, controls)
-- 🔄 Phase 5: IPU6 bridge integration (requires ipu_bridge modification)
+- ⏳ Phase 5: IPU6 bridge modified and installed - **REBOOT REQUIRED TO TEST**
 
 ## Quick Start
 
@@ -62,18 +62,37 @@ sudo ./test_camera_streaming.sh
 - Actual camera streaming
 - Image capture
 
-## Next Steps
+## Next Steps - POST-REBOOT TESTING
 
-The driver is complete but needs one final step: adding GC2607 support to the `ipu_bridge` kernel module.
+The modified `ipu_bridge` module has been installed with GC2607 support. **A system reboot is required** to cleanly load the new module.
 
-**What's Needed:**
-1. Download Linux 6.17.9 kernel source
-2. Modify `drivers/media/pci/intel/ipu-bridge.c`
-3. Add: `IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000),`
-4. Recompile ipu_bridge module
-5. Test with media-ctl
+**After Rebooting, Run These Commands:**
 
-See **CLAUDE.md** for detailed instructions.
+```bash
+cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
+
+# Load GC2607 driver
+sudo insmod gc2607.ko
+
+# THE MOMENT OF TRUTH - Check if GC2607 appears in media topology!
+media-ctl --print-topology | grep -i gc2607
+
+# If successful, view full topology
+media-ctl -d /dev/media0 --print-topology
+
+# Check kernel messages
+sudo dmesg | grep -E "ipu_bridge|gc2607|GCTI2607" | tail -30
+```
+
+**What Was Done:**
+1. ✅ Downloaded Linux 6.17.9 kernel source to ~/kernel/dev
+2. ✅ Modified `drivers/media/pci/intel/ipu-bridge.c` to add: `IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000),`
+3. ✅ Compiled and installed modified ipu_bridge module
+4. ⏳ **Awaiting reboot to test**
+
+If GC2607 appears in the media topology after reboot, **Phase 5 is COMPLETE!**
+
+See **CLAUDE.md** for complete status and details.
 
 ## Documentation
 

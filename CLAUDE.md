@@ -143,42 +143,78 @@ sudo ./investigate_ipu_bridge.sh
 - V4L2 format negotiation ready
 - Async subdev registered
 
-### Phase 5: IPU6 Bridge Integration 🔄 IN PROGRESS
-**Status:** Driver complete, waiting for bridge support
+### Phase 5: IPU6 Bridge Integration ⏳ AWAITING REBOOT TEST
+**Status:** Modified ipu_bridge module installed, awaiting clean boot test
 
-**Current Challenge:**
-The GC2607 driver is fully functional but not appearing in IPU6 media topology because the `ipu_bridge` kernel module doesn't recognize GC2607 sensors.
+**What Was Completed:**
+1. ✅ Downloaded Linux kernel 6.17.9 source to ~/kernel/dev
+2. ✅ Modified `drivers/media/pci/intel/ipu-bridge.c` to add GC2607 support
+3. ✅ Successfully compiled modified ipu_bridge module (511KB)
+4. ✅ Installed modified module with GC2607 (GCTI2607) support
+5. ⏳ **NEEDS REBOOT** - Module installed but requires clean system boot to test
 
-**Investigation Results:**
-- IPU6 driver loaded and working (6 CSI2 receivers, 48 capture devices)
-- Media controller active (/dev/media0)
-- GC2607 registers as async subdev but IPU6 doesn't discover it
-- Root cause: `ipu_bridge` only knows OmniVision sensors (OVTI*)
-- GalaxyCore sensors (GCTI2607, GCTI1029) not in bridge's sensor database
-
-**Supported sensors in ipu_bridge (confirmed via module analysis):**
-```
-OVTI01A0, OVTI01AS, OVTI02C1, OVTI02E1, OVTI08A1,
-OVTI08F4, OVTI13B1, OVTI2680, OVTI8856, OVTIDB10
-```
-
-**NOT supported:**
-```
-GCTI2607 ❌ (GC2607 - our sensor)
-GCTI1029 ❌ (GC1029 - other GalaxyCore sensor on this laptop)
-```
-
-**Next Steps:**
-1. Download Linux kernel 6.17.9 source
-2. Modify `drivers/media/pci/intel/ipu-bridge.c`
-3. Add GC2607 sensor configuration with proper link frequencies
-4. Recompile ipu_bridge module
-5. Test media controller integration
-
-**Required Sensor Config:**
+**Modification Made:**
+Added to `/home/abbood/kernel/dev/linux-6.17.9/drivers/media/pci/intel/ipu-bridge.c` at line 52:
 ```c
-IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000), // 672 Mbps / 2 lanes
+/* GalaxyCore GC2607 */
+IPU_SENSOR_CONFIG("GCTI2607", 1, 336000000),
 ```
+
+**Files Created:**
+- `setup_ipu_bridge_mod.sh` - Downloads kernel source and prepares for modification
+- `compile_ipu_bridge.sh` - Compiles ipu_bridge module (use after copying Module.symvers)
+- `install_ipu_bridge.sh` - Installs modified module (✅ COMPLETED)
+- `reload_ipu_modules.sh` - Reloads IPU modules (had device busy errors)
+
+**Current Situation:**
+- Modified ipu_bridge.ko.zst installed at: `/lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/`
+- Backup saved: `ipu-bridge.ko.zst.backup.20260106_061018`
+- Module verified to contain "GCTI2607" string
+- Hot-reload had "Device or resource busy" errors
+- **System reboot required for clean module load**
+
+**IMMEDIATE POST-REBOOT ACTIONS:**
+After rebooting, run these commands immediately:
+
+```bash
+cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
+
+# Load GC2607 driver
+sudo insmod gc2607.ko
+
+# Check if GC2607 appears in media topology (THE MOMENT OF TRUTH!)
+media-ctl --print-topology | grep -i gc2607
+
+# If found, view full topology
+media-ctl -d /dev/media0 --print-topology
+
+# Check kernel messages
+sudo dmesg | grep -E "ipu_bridge|gc2607|GCTI2607" | tail -30
+```
+
+**Expected Success Indicators:**
+✅ `media-ctl --print-topology | grep -i gc2607` shows output
+✅ GC2607 connected to IPU6 CSI-2 receiver in topology
+✅ Media pipeline can be configured
+✅ Camera device appears as /dev/v4l-subdevX
+
+**If It Works:**
+Phase 5 is COMPLETE! Camera is fully integrated with IPU6.
+Next: Configure media pipeline and attempt image capture.
+
+**If It Doesn't Work:**
+Check dmesg for errors, verify ipu_bridge loaded with new version:
+```bash
+modinfo ipu_bridge
+sudo dmesg | grep ipu_bridge
+```
+
+**Investigation History:**
+- IPU6 driver confirmed working (6 CSI2 receivers, 48 capture devices)
+- Media controller active (/dev/media0)
+- Root cause identified: `ipu_bridge` only knew OmniVision sensors (OVTI*)
+- GalaxyCore sensors (GCTI2607, GCTI1029) were not in bridge's sensor database
+- Solution: Added GCTI2607 to sensor configuration array
 
 ## Key Differences from Reference Driver
 

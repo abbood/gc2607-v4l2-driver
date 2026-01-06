@@ -17,7 +17,9 @@
       "Bash(./test_driver.sh:*)",
       "Bash(modinfo:*)",
       "Bash(sudo ./QUICK_TEST.sh:*)",
-      "Bash(zstd:*)"
+      "Bash(zstd:*)",
+      "Bash(./compile_ipu_bridge.sh)",
+      "Bash(sudo pacman:*)"
     ]
   }
 }
