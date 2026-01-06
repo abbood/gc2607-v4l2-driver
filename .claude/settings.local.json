@@ -23,7 +23,8 @@
       "Bash(sudo modprobe:*)",
       "Bash(pacman:*)",
       "Bash(v4l2-ctl:*)",
-      "Bash(media-ctl:*)"
+      "Bash(media-ctl:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

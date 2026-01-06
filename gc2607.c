@@ -29,6 +29,25 @@
 #define GC2607_REG_END			0xffff
 #define GC2607_REG_DELAY		0x0000
 
+/* Exposure and gain registers */
+#define GC2607_REG_EXPOSURE_H		0x0202
+#define GC2607_REG_EXPOSURE_L		0x0203
+#define GC2607_REG_AGAIN_H		0x02b3
+#define GC2607_REG_AGAIN_L		0x02b4
+#define GC2607_REG_DGAIN_H		0x020c
+#define GC2607_REG_DGAIN_L		0x020d
+
+/* Exposure and gain limits */
+#define GC2607_EXPOSURE_MIN		4
+#define GC2607_EXPOSURE_MAX		0x0537	/* From reference driver */
+#define GC2607_EXPOSURE_STEP		1
+#define GC2607_EXPOSURE_DEFAULT		1300	/* Optimal brightness */
+
+#define GC2607_GAIN_MIN			0x40	/* 1x gain */
+#define GC2607_GAIN_MAX			0xff	/* ~4x gain (simplified) */
+#define GC2607_GAIN_STEP		1
+#define GC2607_GAIN_DEFAULT		220	/* Optimal brightness */
+
 /* Sensor timing - from reference driver */
 #define GC2607_PIXEL_RATE		(672000000LL / 10 * 2)  /* 134.4 MHz */
 #define GC2607_LINK_FREQ		336000000LL  /* 672 Mbps / 2 lanes */
@@ -62,6 +81,8 @@ struct gc2607 {
 	struct v4l2_ctrl_handler ctrls;
 	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *pixel_rate;
+	struct v4l2_ctrl *exposure;
+	struct v4l2_ctrl *gain;
 
 	/* Power management resources (provided by INT3472 PMIC) */
 	struct clk *xclk;		/* Master clock (typically 19.2 MHz) */
@@ -535,6 +556,14 @@ static int gc2607_s_stream(struct v4l2_subdev *sd, int enable)
 			return ret;
 		}
 
+		/* Apply current control values (exposure, gain) */
+		ret = __v4l2_ctrl_handler_setup(&gc2607->ctrls);
+		if (ret) {
+			dev_err(&client->dev, "Failed to apply controls: %d\n", ret);
+			pm_runtime_put(&client->dev);
+			return ret;
+		}
+
 		dev_info(&client->dev, "Stream ON - sensor initialized\n");
 		gc2607->streaming = true;
 	} else {
@@ -545,6 +574,59 @@ static int gc2607_s_stream(struct v4l2_subdev *sd, int enable)
 
 	return 0;
 }
+
+/*
+ * V4L2 control operations
+ */
+static int gc2607_s_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct gc2607 *gc2607 = container_of(ctrl->handler,
+					     struct gc2607, ctrls);
+	struct i2c_client *client = gc2607->client;
+	int ret = 0;
+
+	/* Only apply controls when streaming */
+	if (!pm_runtime_get_if_in_use(&client->dev))
+		return 0;
+
+	switch (ctrl->id) {
+	case V4L2_CID_EXPOSURE:
+		/* Write exposure value to registers (16-bit) */
+		ret = gc2607_write_reg(gc2607, GC2607_REG_EXPOSURE_H,
+				       (ctrl->val >> 8) & 0xff);
+		if (ret)
+			break;
+		ret = gc2607_write_reg(gc2607, GC2607_REG_EXPOSURE_L,
+				       ctrl->val & 0xff);
+		if (!ret)
+			dev_dbg(&client->dev, "Set exposure to %d\n", ctrl->val);
+		break;
+
+	case V4L2_CID_ANALOGUE_GAIN:
+		/* Simplified gain control - just use high byte register */
+		/* Full implementation would use LUT for all 4 registers */
+		ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_H,
+				       ctrl->val & 0xff);
+		if (ret)
+			break;
+		/* Set other gain registers to safe values */
+		ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_L, 0x00);
+		if (!ret)
+			dev_dbg(&client->dev, "Set gain to 0x%02x\n", ctrl->val);
+		break;
+
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	pm_runtime_put(&client->dev);
+	return ret;
+}
+
+static const struct v4l2_ctrl_ops gc2607_ctrl_ops = {
+	.s_ctrl = gc2607_s_ctrl,
+};
 
 static const struct v4l2_subdev_video_ops gc2607_video_ops = {
 	.s_stream = gc2607_s_stream,
@@ -715,7 +797,7 @@ static int gc2607_probe(struct i2c_client *client)
 	}
 
 	/* Initialize control handler with V4L2 controls */
-	v4l2_ctrl_handler_init(&gc2607->ctrls, 2);
+	v4l2_ctrl_handler_init(&gc2607->ctrls, 4);
 
 	/* Link frequency control (required by IPU6) */
 	gc2607->link_freq = v4l2_ctrl_new_int_menu(&gc2607->ctrls,
@@ -737,6 +819,24 @@ static int gc2607_probe(struct i2c_client *client)
 						GC2607_PIXEL_RATE);
 	if (gc2607->pixel_rate)
 		gc2607->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	/* Exposure control */
+	gc2607->exposure = v4l2_ctrl_new_std(&gc2607->ctrls,
+					      &gc2607_ctrl_ops,
+					      V4L2_CID_EXPOSURE,
+					      GC2607_EXPOSURE_MIN,
+					      GC2607_EXPOSURE_MAX,
+					      GC2607_EXPOSURE_STEP,
+					      GC2607_EXPOSURE_DEFAULT);
+
+	/* Analog gain control */
+	gc2607->gain = v4l2_ctrl_new_std(&gc2607->ctrls,
+					  &gc2607_ctrl_ops,
+					  V4L2_CID_ANALOGUE_GAIN,
+					  GC2607_GAIN_MIN,
+					  GC2607_GAIN_MAX,
+					  GC2607_GAIN_STEP,
+					  GC2607_GAIN_DEFAULT);
 
 	gc2607->sd.ctrl_handler = &gc2607->ctrls;
 
