@@ -2,6 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current Status Summary
+
+**✅ CAMERA IS WORKING AND CAPTURING IMAGES!**
+
+**What's Complete (Phases 1-6):**
+- ✅ Driver fully functional with V4L2 integration
+- ✅ IPU6 bridge integration (modified ipu_bridge.ko installed)
+- ✅ Successfully capturing 1920x1080@30fps RAW Bayer images
+- ✅ Media pipeline: gc2607 → IPU6 CSI2 0 → /dev/video0
+- ✅ Image viewer scripts with brightness adjustment
+
+**What's Next (Phase 7 - IN PROGRESS):**
+- ⏳ Implement exposure control (V4L2_CID_EXPOSURE) for proper brightness
+- ⏳ Implement gain control (V4L2_CID_ANALOGUE_GAIN)
+- Goal: Native proper exposure without post-processing
+- Purpose: Enable use with OBS Studio and other camera applications
+
+**Quick Capture Test:**
+```bash
+sudo modprobe videodev v4l2-async ipu_bridge intel-ipu6 intel-ipu6-isys
+sudo insmod gc2607.ko
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.raw
+./view_raw_bright.py test.raw 5.0 && feh test.png
+```
+
 ## Project Overview
 
 This project successfully ported the GalaxyCore GC2607 camera sensor driver from the Ingenic T41 platform (MIPS embedded) to the Linux V4L2 subsystem for Intel IPU6 on x86_64.
@@ -219,6 +246,71 @@ feh capture.png
 - `view_raw.py` - Basic raw Bayer to PNG converter
 - `view_raw_bright.py` - Converter with brightness boost and auto-flip
 - `compile_ipu_bridge_simple.sh` - Simplified single-module build script
+
+### Phase 7: Exposure & Gain Controls ⏳ IN PROGRESS
+**Status:** Ready to implement - Camera captures but images are dark
+
+**Current Situation:**
+- Camera successfully captures images at 1920x1080@30fps
+- Images are very dark due to lack of exposure/gain controls
+- Currently using post-processing workaround (`view_raw_bright.py`)
+- Driver only implements read-only controls (link_freq, pixel_rate)
+
+**Next Steps - Implement V4L2 Controls:**
+1. Add `V4L2_CID_EXPOSURE` control
+   - Register: 0x0202 (high byte), 0x0203 (low byte)
+   - Range: TBD (needs testing, reference uses up to ~0x537)
+   - Default: Start with 0x0400 (1024 lines)
+
+2. Add `V4L2_CID_ANALOGUE_GAIN` control
+   - Registers: 0x02b3, 0x02b4, 0x020c, 0x020d
+   - Reference driver uses lookup table (23 entries)
+   - Simplified implementation: Start with just 0x02b3, 0x02b4
+
+3. Implement `s_ctrl` callback in V4L2 control ops
+   - Write exposure value to registers during streaming
+   - Write gain value to registers during streaming
+
+4. Update control handler initialization
+   - Change from 2 controls to 4 controls
+   - Add both new controls with proper ranges
+
+**Implementation Reference:**
+From reference driver (reference/gc2607.c):
+```c
+// Exposure write (lines 428-429)
+ret += gc2607_write(sd, 0x0202, expo >> 8);
+ret += gc2607_write(sd, 0x0203, expo & 0xff);
+
+// Gain write (lines 430-433)
+ret = gc2607_write(sd, 0x02b3, val_lut[again].reg2b3);
+ret = gc2607_write(sd, 0x02b4, val_lut[again].reg2b4);
+ret = gc2607_write(sd, 0x020c, val_lut[again].reg20c);
+ret = gc2607_write(sd, 0x020d, val_lut[again].reg20d);
+```
+
+**Benefits After Implementation:**
+- ✅ Proper image brightness without post-processing
+- ✅ Real-time exposure adjustment
+- ✅ Compatible with standard camera applications (OBS, Cheese, etc.)
+- ✅ Auto-exposure can be added later
+
+**Test Plan:**
+1. Add controls and rebuild driver
+2. Load driver and verify controls exist:
+   ```bash
+   v4l2-ctl -d /dev/v4l-subdev6 --list-ctrls
+   ```
+3. Test manual exposure adjustment:
+   ```bash
+   v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2000
+   ```
+4. Capture image and verify brightness improved
+5. Find optimal default values through testing
+
+**Files to Create:**
+- Patch file with implementation details (for reference)
+- Test script to iterate through exposure/gain values
 
 ## Key Differences from Reference Driver
 
