@@ -66,15 +66,15 @@ echo "WB gains: R=$R_GAIN, G=$G_GAIN, B=$B_GAIN"
 echo "Press Ctrl+C to stop"
 echo ""
 
-# Start pipeline with white balance
+# Start pipeline with white balance at 24fps for Chrome
 gst-launch-1.0 -v \
     v4l2src device=/dev/video0 ! \
-    "video/x-bayer,format=grbg10le,width=1920,height=1080,framerate=30/1" ! \
+    "video/x-bayer,format=grbg10le,width=1920,height=1080,framerate=24/1" ! \
     bayer2rgb ! \
     videoflip method=rotate-180 ! \
     videoconvert ! \
     "video/x-raw,format=RGBA" ! \
     frei0r-filter-coloradj-rgb r=$R_PARAM g=$G_PARAM b=$B_PARAM keep-luma=false ! \
     videoconvert ! \
-    "video/x-raw,format=I420" ! \
+    "video/x-raw,format=I420,framerate=24/1" ! \
     v4l2sink device=$VIRT_DEV
