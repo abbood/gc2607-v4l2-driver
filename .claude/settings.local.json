@@ -27,7 +27,12 @@
       "Bash(git stash:*)",
       "Bash(../view_raw_bright.py temp.raw 1.0)",
       "Bash(ffmpeg:*)",
-      "Bash(./view_raw_bright.py:*)"
+      "Bash(./view_raw_bright.py:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(systemctl:*)",
+      "Bash(fuser:*)",
+      "Bash(git push:*)"
     ]
   }
 }

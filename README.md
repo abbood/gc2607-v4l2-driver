@@ -40,6 +40,7 @@ This driver successfully ports the GC2607 sensor from embedded platforms to main
 ✅ **Exposure control (V4L2_CID_EXPOSURE)**
 ✅ **Analog gain control (V4L2_CID_ANALOGUE_GAIN)**
 ✅ **OBS Studio integration with virtual RGB camera**
+✅ **Google Meet / Chrome / Chromium support**
 
 ## Prerequisites
 
@@ -152,6 +153,35 @@ Now in OBS Studio:
 
 **Note:** The `create_virtual_camera.sh` script must keep running while using the camera.
 
+### Using with Google Meet and Chrome/Chromium
+
+**Important:** Chrome/Chromium's PipeWire camera support blocks v4l2loopback virtual cameras. You need to disable it:
+
+#### One-time Setup for Chrome/Chromium:
+
+1. Open Chrome/Chromium and navigate to: `chrome://flags`
+2. Search for: **"pipewire"**
+3. Find: **"PipeWire Camera support"**
+4. Set to: **Disabled**
+5. Click **"Relaunch"**
+
+#### Using the Camera:
+
+```bash
+# Option 1: Use create_virtual_camera.sh (works for both OBS and Meet)
+./create_virtual_camera.sh
+
+# Option 2: Use reload_for_chrome.sh (optimized for Chrome with I420 format)
+./reload_for_chrome.sh
+```
+
+Then in Google Meet:
+1. Join a meeting
+2. Click Settings (gear icon) → Video
+3. Select: **"GC2607 RGB Camera"** from the dropdown
+
+**Note:** Your external USB cameras (like Logitech) will still work perfectly with PipeWire disabled. Both cameras will appear in the list.
+
 ### Adjusting Exposure and Gain
 
 ```bash
@@ -208,6 +238,20 @@ v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
    modinfo ipu_bridge
    strings /lib/modules/$(uname -r)/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst | grep GCTI2607
    ```
+
+### Camera not appearing in Google Meet/Chrome
+
+**Cause:** Chrome's PipeWire camera support blocks v4l2loopback virtual cameras.
+
+**Solution:**
+1. Go to `chrome://flags` in Chrome/Chromium
+2. Search for "pipewire"
+3. Disable "PipeWire Camera support"
+4. Restart the browser
+5. Run `./reload_for_chrome.sh` to restart the camera pipeline
+6. Refresh Google Meet
+
+The camera should now appear as "GC2607 RGB Camera" in the device list.
 
 ## Architecture
 
@@ -315,8 +359,8 @@ Contributions welcome! Areas of interest:
 
 ---
 
-**Status:** ✅ Production ready - Full exposure/gain control, OBS Studio compatible
+**Status:** ✅ Production ready - Full exposure/gain control, OBS Studio & Google Meet compatible
 **Tested on:** Huawei MateBook Pro VGHH-XX
 **Kernel:** 6.17.9-arch1-1
 **Last Updated:** January 7, 2026
-**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration, full manual controls, and real-time video streaming
+**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration, full manual controls, real-time video streaming, and WebRTC compatibility
