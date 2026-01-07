@@ -53,7 +53,7 @@ v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
 media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
 
 echo "Step 4: Setting optimal exposure/gain..."
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1335,analogue_gain=253
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2002,analogue_gain=14
 
 echo ""
 echo "✅ Camera initialized successfully!"
@@ -76,14 +76,14 @@ echo "Option 2: Quick Capture Test"
 echo "  ./quick_capture.sh"
 echo ""
 echo "Option 3: Adjust Settings Live"
-echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200"
-echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=240"
+echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1800"
+echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=10"
 echo ""
 echo "========================================"
 echo ""
 echo "Status: PHASE 7 COMPLETE ✅"
 echo "  - Exposure/Gain controls working"
-echo "  - White balance fixed (use view_raw_improved.py)"
-echo "  - Optimal defaults: exposure=1335, gain=253"
+echo "  - VTS extended for better low-light (20 FPS)"
+echo "  - Optimal defaults: exposure=2002, gain=14 (LUT index)"
 echo "  - Ready for OBS Studio and video apps"
 echo ""

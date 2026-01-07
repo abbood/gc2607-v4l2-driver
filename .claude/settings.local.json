@@ -32,7 +32,11 @@
       "Bash(git commit:*)",
       "Bash(systemctl:*)",
       "Bash(fuser:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "WebFetch(domain:taoic.oss-cn-hangzhou.aliyuncs.com)",
+      "Bash(kill:*)",
+      "Bash(sudo ./reload_driver.sh:*)",
+      "Bash(gst-inspect-1.0:*)"
     ]
   }
 }

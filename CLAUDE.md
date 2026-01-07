@@ -26,8 +26,10 @@ sudo insmod gc2607.ko
 v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
 media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
 v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.raw
-./view_raw_bright.py test.raw 5.0 && feh test.png
+./view_raw_wb.py test.raw 5.0 && feh test.png
 ```
+
+**Note:** Use `view_raw_wb.py` (with white balance) for natural colors, or `view_raw_bright.py` (without WB) for quick testing.
 
 ## Project Overview
 
