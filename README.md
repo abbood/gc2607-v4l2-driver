@@ -6,7 +6,7 @@ A fully functional Linux V4L2 driver for the GalaxyCore GC2607 camera sensor, in
 
 This driver successfully ports the GC2607 sensor from embedded platforms to mainline Linux, enabling camera functionality on laptops with Intel IPU6 that use this sensor.
 
-**Status:** ✅ **FULLY FUNCTIONAL** - Successfully capturing images!
+**Status:** ✅ **FULLY FUNCTIONAL** - Camera working with OBS Studio and video applications!
 
 ### Supported Hardware
 
@@ -25,6 +25,7 @@ This driver successfully ports the GC2607 sensor from embedded platforms to main
 - ✅ Phase 4: V4L2 integration (async subdev, pad ops, controls)
 - ✅ Phase 5: IPU6 bridge integration
 - ✅ Phase 6: Image capture and streaming **SUCCESS!**
+- ✅ Phase 7: Exposure & gain controls **COMPLETE!**
 
 ## Features
 
@@ -36,13 +37,20 @@ This driver successfully ports the GC2607 sensor from embedded platforms to main
 ✅ Power management via INT3472 PMIC
 ✅ Runtime PM support
 ✅ Proper reset sequencing
+✅ **Exposure control (V4L2_CID_EXPOSURE)**
+✅ **Analog gain control (V4L2_CID_ANALOGUE_GAIN)**
+✅ **OBS Studio integration with virtual RGB camera**
 
 ## Prerequisites
 
 ### Required Packages (Arch Linux)
 
 ```bash
+# Core driver dependencies
 sudo pacman -S base-devel linux-headers v4l-utils media-ctl python-pillow python-numpy feh
+
+# For OBS Studio integration (optional)
+sudo pacman -S v4l2loopback-dkms gstreamer gst-plugins-base gst-plugins-good
 ```
 
 ### Modified IPU6 Bridge Module
@@ -125,11 +133,53 @@ LATEST=$(ls -t capture_*.raw | head -1)
 feh "${LATEST%.raw}.png"
 ```
 
+### Using with OBS Studio and Video Applications
+
+The camera outputs raw Bayer format which most applications can't handle directly. Use the virtual RGB camera:
+
+```bash
+# 1. Initialize the camera (only needed once per boot)
+sudo ./init_camera.sh
+
+# 2. Create virtual RGB camera (leave running in background)
+./create_virtual_camera.sh
+```
+
+Now in OBS Studio:
+1. Add Source → Video Capture Device (V4L2)
+2. Select device: **"GC2607 RGB"** from the dropdown
+3. The camera will appear with proper RGB colors and correct orientation
+
+**Note:** The `create_virtual_camera.sh` script must keep running while using the camera.
+
+### Adjusting Exposure and Gain
+
+```bash
+# List available controls
+v4l2-ctl -d /dev/v4l-subdev6 --list-ctrls
+
+# Adjust exposure (default: 1335, range: 1-1500)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200
+
+# Adjust gain (default: 253, range: 64-255)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=240
+
+# Optimal defaults (already set by init_camera.sh)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1335,analogue_gain=253
+```
+
 ## Troubleshooting
 
-### Image is too dark
-The driver doesn't yet implement exposure/gain controls. Use the brightness parameter:
+### Image is too dark or too bright
+Adjust the exposure and gain controls:
 ```bash
+# Increase brightness
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1400,analogue_gain=255
+
+# Decrease brightness
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200,analogue_gain=200
+
+# For raw captures without controls, use brightness multiplier:
 ./view_raw_bright.py capture.raw 8.0  # Try values between 3.0 and 10.0
 ```
 
@@ -215,22 +265,22 @@ v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
 
 ## Future Enhancements
 
-The driver is fully functional for basic image capture. Planned improvements include:
+The driver is fully functional and ready for production use. Potential improvements include:
 
 **High Priority:**
-- Exposure control (V4L2_CID_EXPOSURE)
-- Analog gain control (V4L2_CID_ANALOGUE_GAIN)
-- Auto white balance
+- Auto-exposure (AE) algorithm
+- Auto white balance (AWB)
 - Improved demosaicing algorithm
 
 **Medium Priority:**
-- Multiple resolution support
-- Frame rate control
-- Test pattern mode
+- Multiple resolution support (720p, 480p, etc.)
+- Frame rate control (15fps, 24fps options)
+- Test pattern mode for debugging
 
 **Low Priority:**
 - Auto-focus support (if VCM present)
 - HDR support
+- Advanced ISP features
 
 ## Documentation
 
@@ -250,10 +300,11 @@ This driver is released under the GPL-2.0 license, consistent with the Linux ker
 ## Contributing
 
 Contributions welcome! Areas of interest:
-- Exposure/gain control implementation
+- Auto-exposure/auto-gain algorithms
 - Multi-resolution support
 - Other GalaxyCore sensors (GC1029, etc.)
 - Testing on different hardware platforms
+- OBS Studio plugin for native Bayer support
 
 ## Acknowledgments
 
@@ -263,8 +314,8 @@ Contributions welcome! Areas of interest:
 
 ---
 
-**Status:** ✅ Production ready for basic image capture
+**Status:** ✅ Production ready - Full exposure/gain control, OBS Studio compatible
 **Tested on:** Huawei MateBook Pro VGHH-XX
 **Kernel:** 6.17.9-arch1-1
-**Last Updated:** January 6, 2026
-**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration
+**Last Updated:** January 7, 2026
+**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration, full manual controls, and real-time video streaming
