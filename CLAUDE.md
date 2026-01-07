@@ -13,11 +13,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ Media pipeline: gc2607 → IPU6 CSI2 0 → /dev/video0
 - ✅ Image viewer scripts with brightness adjustment
 
-**What's Next (Phase 7 - IN PROGRESS):**
-- ⏳ Implement exposure control (V4L2_CID_EXPOSURE) for proper brightness
-- ⏳ Implement gain control (V4L2_CID_ANALOGUE_GAIN)
-- Goal: Native proper exposure without post-processing
-- Purpose: Enable use with OBS Studio and other camera applications
+**Phase 7: Exposure, Gain & White Balance ✅ COMPLETE:**
+- ✅ Exposure control (V4L2_CID_EXPOSURE) - range 4-2002
+- ✅ Gain control (V4L2_CID_ANALOGUE_GAIN) - LUT index 0-16
+- ✅ Gray world white balance (R=1.034, G=1.000, B=1.246)
+- ✅ Optimal settings for indoor lighting: exposure=2002, gain=16
+- ✅ Real-time white balance in GStreamer pipeline using frei0r
 
 **Quick Capture Test:**
 ```bash
@@ -249,70 +250,66 @@ feh capture.png
 - `view_raw_bright.py` - Converter with brightness boost and auto-flip
 - `compile_ipu_bridge_simple.sh` - Simplified single-module build script
 
-### Phase 7: Exposure & Gain Controls ⏳ IN PROGRESS
-**Status:** Ready to implement - Camera captures but images are dark
+### Phase 7: Exposure, Gain & White Balance ✅ COMPLETE
+**Status:** Fully implemented - Camera produces natural colors with proper exposure
 
-**Current Situation:**
-- Camera successfully captures images at 1920x1080@30fps
-- Images are very dark due to lack of exposure/gain controls
-- Currently using post-processing workaround (`view_raw_bright.py`)
-- Driver only implements read-only controls (link_freq, pixel_rate)
+**What Was Implemented:**
+1. ✅ **V4L2_CID_EXPOSURE control**
+   - Registers: 0x0202 (high byte), 0x0203 (low byte)
+   - Range: 4-2002 lines
+   - Default: 2002 (max, optimal for indoor lighting)
+   - Real-time adjustment during streaming
 
-**Next Steps - Implement V4L2 Controls:**
-1. Add `V4L2_CID_EXPOSURE` control
-   - Register: 0x0202 (high byte), 0x0203 (low byte)
-   - Range: TBD (needs testing, reference uses up to ~0x537)
-   - Default: Start with 0x0400 (1024 lines)
+2. ✅ **V4L2_CID_ANALOGUE_GAIN control**
+   - Registers: 0x02b3, 0x02b4, 0x020c, 0x020d (4-register LUT)
+   - Range: 0-16 (LUT index with 17 entries)
+   - Default: 16 (max, ~15.8x gain)
+   - Gain LUT from reference driver with verified values
 
-2. Add `V4L2_CID_ANALOGUE_GAIN` control
-   - Registers: 0x02b3, 0x02b4, 0x020c, 0x020d
-   - Reference driver uses lookup table (23 entries)
-   - Simplified implementation: Start with just 0x02b3, 0x02b4
+3. ✅ **Gray World White Balance**
+   - Implemented in GStreamer pipeline using `frei0r-filter-coloradj-rgb`
+   - Calculated gains: R=1.034, G=1.000, B=1.246
+   - Applied during Bayer-to-RGB conversion in userspace
+   - Sensor has no hardware white balance registers
 
-3. Implement `s_ctrl` callback in V4L2 control ops
-   - Write exposure value to registers during streaming
-   - Write gain value to registers during streaming
+4. ✅ **Scripts Updated with Optimal Settings**
+   - `create_virtual_camera.sh` - OBS Studio (YUY2, 30fps)
+   - `create_virtual_camera_wb.sh` - Parameterized white balance version
+   - `reload_for_chrome.sh` - Chrome/Meet compatible (I420, 24fps)
+   - `view_raw_wb.py` - Static image converter with white balance
+   - `calculate_wb_gains.py` - Calculate WB gains from raw captures
 
-4. Update control handler initialization
-   - Change from 2 controls to 4 controls
-   - Add both new controls with proper ranges
+**Optimal Settings (Indoor Lighting):**
+```bash
+# Exposure: Maximum (2002 lines) for adequate brightness
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2002
 
-**Implementation Reference:**
-From reference driver (reference/gc2607.c):
-```c
-// Exposure write (lines 428-429)
-ret += gc2607_write(sd, 0x0202, expo >> 8);
-ret += gc2607_write(sd, 0x0203, expo & 0xff);
+# Gain: Maximum LUT index (16 = 15.8x gain)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=16
 
-// Gain write (lines 430-433)
-ret = gc2607_write(sd, 0x02b3, val_lut[again].reg2b3);
-ret = gc2607_write(sd, 0x02b4, val_lut[again].reg2b4);
-ret = gc2607_write(sd, 0x020c, val_lut[again].reg20c);
-ret = gc2607_write(sd, 0x020d, val_lut[again].reg20d);
+# White balance: Applied in GStreamer (R=1.034, G=1.000, B=1.246)
 ```
 
-**Benefits After Implementation:**
-- ✅ Proper image brightness without post-processing
-- ✅ Real-time exposure adjustment
-- ✅ Compatible with standard camera applications (OBS, Cheese, etc.)
-- ✅ Auto-exposure can be added later
+**Key Discoveries:**
+- Initial green tint was NOT a Bayer pattern issue - correct pattern is SGRBG10 (GRBG)
+- Green tint was due to missing white balance correction
+- Sensor requires high exposure (2002) and high gain (16) for indoor use
+- GC2607 sensor has no hardware white balance capability
+- White balance must be applied in userspace during Bayer→RGB conversion
 
-**Test Plan:**
-1. Add controls and rebuild driver
-2. Load driver and verify controls exist:
-   ```bash
-   v4l2-ctl -d /dev/v4l-subdev6 --list-ctrls
-   ```
-3. Test manual exposure adjustment:
-   ```bash
-   v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2000
-   ```
-4. Capture image and verify brightness improved
-5. Find optimal default values through testing
+**Technical Implementation:**
+- Driver implements V4L2 control ops (`s_ctrl`) for real-time adjustment
+- Gain uses lookup table with 17 entries (index 0-16)
+- Exposure range validated: 4-2002 lines (VTS-2)
+- GStreamer pipeline uses frei0r RGB color adjustment filter
+- White balance parameters: r=0.517, g=0.500, b=0.623 (frei0r scale)
 
-**Files to Create:**
-- Patch file with implementation details (for reference)
-- Test script to iterate through exposure/gain values
+**Achievements:**
+- ✅ Natural color reproduction without green tint
+- ✅ Proper exposure for indoor lighting
+- ✅ Real-time adjustable exposure/gain
+- ✅ Works with OBS Studio, Chrome, Google Meet
+- ✅ Compatible with standard V4L2 applications
 
 ## Key Differences from Reference Driver
 
@@ -341,10 +338,24 @@ ret = gc2607_write(sd, 0x020d, val_lut[again].reg20d);
 - `test_camera_streaming.sh` - Check IPU6 integration and media devices
 - `investigate_ipu_bridge.sh` - Analyze ipu_bridge sensor support
 - `QUICK_TEST.sh` - Quick driver functionality test
+- `reload_driver.sh` - Reload driver with proper media pipeline setup
+
+### Camera Streaming Scripts
+- `create_virtual_camera.sh` - Virtual RGB camera for OBS Studio (YUY2, 30fps, with WB)
+- `create_virtual_camera_wb.sh` - Parameterized white balance version
+- `reload_for_chrome.sh` - Virtual RGB camera for Chrome/Meet (I420, 24fps, with WB)
+- `init_camera.sh` - Initialize camera modules and media pipeline
+
+### Image Processing Tools
+- `view_raw_bright.py` - Convert raw Bayer to PNG with brightness boost (no WB)
+- `view_raw_wb.py` - Convert raw Bayer to PNG with gray world white balance
+- `calculate_wb_gains.py` - Calculate optimal white balance gains from raw capture
 
 ### Documentation Files
 - `CLAUDE.md` (this file) - Project overview and current status
+- `README.md` - User-facing documentation and usage guide
 - `INT3472_INTEGRATION_ANALYSIS.md` - PMIC integration details
+- `BRIGHTNESS_ANALYSIS.md` - White balance and exposure tuning notes
 - `NEXT_STEPS.md` - Detailed implementation roadmap
 - `PHASE2_FIX.md` - Reset sequence fix documentation
 - `TEST_PHASE2.md` - Initial testing results
@@ -430,19 +441,19 @@ This laptop has a multi-camera setup with at least 4 sensors.
 
 ## Future Enhancements
 
-The camera is now fully functional! Potential improvements:
+The camera is production-ready with exposure/gain controls and white balance! Potential improvements:
 
 **High Priority:**
-- Exposure control implementation (V4L2_CID_EXPOSURE)
-- Gain control with LUT (V4L2_CID_ANALOGUE_GAIN)
-- Auto white balance
-- Better Bayer demosaicing algorithm
+- Auto-exposure (AE) algorithm
+- Auto white balance (AWB) - currently using fixed gray world gains
+- Better Bayer demosaicing algorithm (currently using GStreamer's basic bayer2rgb)
 
 **Medium Priority:**
 - Multiple resolution support (currently fixed at 1920x1080)
 - Frame rate control (currently fixed at 30fps)
 - Test pattern mode for debugging
 - Privacy LED control integration
+- Hardware-accelerated Bayer-to-RGB conversion (Intel IPU6 ISP)
 
 **Low Priority:**
 - Auto-focus integration (if VCM present)
@@ -475,9 +486,25 @@ media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0
 # Capture image
 v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=test.raw
 
-# Convert and view
+# Convert with white balance (recommended)
+./view_raw_wb.py test.raw 5.0
+feh test.png
+
+# Or convert without white balance (faster but green tint)
 ./view_raw_bright.py test.raw 5.0
 feh test.png
+```
+
+**For video streaming (OBS Studio, Google Meet, Chrome):**
+```bash
+# Initialize camera
+sudo ./init_camera.sh
+
+# For OBS Studio (30fps, YUY2)
+./create_virtual_camera.sh
+
+# For Chrome/Google Meet (24fps, I420)
+./reload_for_chrome.sh
 ```
 
 **Note:** First-time setup requires installing the modified ipu_bridge module (see Phase 5).
@@ -490,7 +517,7 @@ feh test.png
 - Intel IPU6 documentation: Linux kernel drivers/media/pci/intel/
 - Media controller documentation: https://www.kernel.org/doc/html/latest/userspace-api/media/mediactl/media-controller.html
 
-**Project Status:** ✅ FULLY FUNCTIONAL - Camera driver complete and capturing images!
-**Last Updated:** January 6, 2026
+**Project Status:** ✅ PRODUCTION READY - Camera driver with natural colors and optimal exposure!
+**Last Updated:** January 7, 2026
 **Kernel Version:** 6.17.9-arch1-1
-**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration
+**Achievement:** Successfully ported proprietary embedded camera driver to mainline Linux V4L2 with IPU6 integration, implemented full exposure/gain controls, and gray world white balance for production-quality video streaming in OBS Studio, Google Meet, and Chrome

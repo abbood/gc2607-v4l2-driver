@@ -37,10 +37,11 @@ This driver successfully ports the GC2607 sensor from embedded platforms to main
 ✅ Power management via INT3472 PMIC
 ✅ Runtime PM support
 ✅ Proper reset sequencing
-✅ **Exposure control (V4L2_CID_EXPOSURE)**
-✅ **Analog gain control (V4L2_CID_ANALOGUE_GAIN)**
+✅ **Exposure control (V4L2_CID_EXPOSURE) - range 4-2002**
+✅ **Analog gain control (V4L2_CID_ANALOGUE_GAIN) - LUT index 0-16**
+✅ **Gray world white balance** during Bayer-to-RGB conversion
 ✅ **OBS Studio integration with virtual RGB camera**
-✅ **Google Meet / Chrome / Chromium support**
+✅ **Google Meet / Chrome / Chromium support (24fps I420)**
 
 ## Prerequisites
 
@@ -184,18 +185,45 @@ Then in Google Meet:
 
 ### Adjusting Exposure and Gain
 
+The camera uses a gain LUT (lookup table) with 17 entries (0-16), not raw gain values.
+
 ```bash
 # List available controls
 v4l2-ctl -d /dev/v4l-subdev6 --list-ctrls
 
-# Adjust exposure (default: 1335, range: 1-1500)
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200
+# Adjust exposure (range: 4-2002)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2002
 
-# Adjust gain (default: 253, range: 64-255)
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=240
+# Adjust gain (range: 0-16, LUT index)
+# 0 = 1.0x gain (lowest noise)
+# 4 = 2.0x gain
+# 8 = 4.0x gain
+# 16 = 15.8x gain (max)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=16
 
-# Optimal defaults (already set by init_camera.sh)
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1335,analogue_gain=253
+# Optimal defaults for indoor lighting (set automatically by scripts)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2002,analogue_gain=16
+```
+
+### White Balance
+
+All camera scripts automatically apply **gray world white balance** during Bayer-to-RGB conversion using GStreamer's `frei0r-filter-coloradj-rgb`:
+
+- **Red gain:** 1.034
+- **Green gain:** 1.000 (reference)
+- **Blue gain:** 1.246
+
+These values are calibrated for natural color reproduction. To recalibrate for your lighting conditions:
+
+```bash
+# Capture a test frame
+v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=wb_test.raw
+
+# Calculate optimal white balance gains
+./calculate_wb_gains.py wb_test.raw
+
+# Use the calculated gains with the WB script
+./create_virtual_camera_wb.sh <R_GAIN> <G_GAIN> <B_GAIN>
 ```
 
 ## Troubleshooting
@@ -203,13 +231,16 @@ v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1335,analogue_gain=253
 ### Image is too dark or too bright
 Adjust the exposure and gain controls:
 ```bash
-# Increase brightness
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1400,analogue_gain=255
+# Increase brightness (max values)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=2002,analogue_gain=16
 
-# Decrease brightness
-v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200,analogue_gain=200
+# Decrease brightness (for bright conditions)
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1000,analogue_gain=8
 
-# For raw captures without controls, use brightness multiplier:
+# For raw captures, use white balance script:
+./view_raw_wb.py capture.raw 5.0
+
+# Or use brightness multiplier without white balance:
 ./view_raw_bright.py capture.raw 8.0  # Try values between 3.0 and 10.0
 ```
 
@@ -273,6 +304,11 @@ The camera should now appear as "GC2607 RGB Camera" in the device list.
 - **gc2607.c** - Main driver (V4L2 subdev, power management, register initialization)
 - **ipu-bridge.c** - Modified to recognize GCTI2607 sensor
 - **view_raw_bright.py** - RAW Bayer to PNG converter with brightness boost
+- **view_raw_wb.py** - RAW Bayer to PNG converter with gray world white balance
+- **calculate_wb_gains.py** - Calculate optimal white balance gains from raw capture
+- **create_virtual_camera.sh** - Create virtual RGB camera with white balance (OBS/YUY2)
+- **create_virtual_camera_wb.sh** - Parameterized white balance version
+- **reload_for_chrome.sh** - Create virtual RGB camera for Chrome/Meet (I420, 24fps)
 - **compile_ipu_bridge_simple.sh** - Builds modified ipu_bridge module
 
 ## Technical Details

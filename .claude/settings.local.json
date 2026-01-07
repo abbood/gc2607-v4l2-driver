@@ -36,7 +36,10 @@
       "WebFetch(domain:taoic.oss-cn-hangzhou.aliyuncs.com)",
       "Bash(kill:*)",
       "Bash(sudo ./reload_driver.sh:*)",
-      "Bash(gst-inspect-1.0:*)"
+      "Bash(gst-inspect-1.0:*)",
+      "Bash(pactl info:*)",
+      "Bash(pactl list:*)",
+      "Bash(pactl set-source-volume:*)"
     ]
   }
 }
