@@ -21,7 +21,27 @@ sleep 1
 # Load GC2607 driver
 echo "Loading GC2607 driver..."
 cd "$(dirname "$0")"
-insmod gc2607.ko
+
+# Unload if already loaded
+if lsmod | grep -q gc2607; then
+    echo "  Driver already loaded, reloading..."
+    # Disable media link first
+    media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[0]' 2>/dev/null || true
+    sleep 1
+    # Unload IPU modules first (this will unload gc2607 too)
+    modprobe -r intel-ipu6-isys 2>/dev/null || true
+    modprobe -r intel-ipu6 2>/dev/null || true
+    sleep 1
+    # Reload IPU modules
+    modprobe intel-ipu6
+    modprobe intel-ipu6-isys
+    sleep 1
+fi
+
+# Load gc2607 if not already loaded
+if ! lsmod | grep -q gc2607; then
+    insmod gc2607.ko
+fi
 
 # Wait for device initialization
 sleep 2

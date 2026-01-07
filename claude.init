@@ -1,105 +1,89 @@
-================================================================================
-POST-REBOOT INSTRUCTIONS FOR GC2607 CAMERA DRIVER - PHASE 5
-================================================================================
+#!/bin/bash
+# GC2607 Camera Driver - Post-Reboot Initialization
+# Run this after every reboot to set up the camera
 
-CURRENT STATUS:
-- GC2607 driver loads successfully ✅
-- Sensor detected (chip ID 0x2607) ✅
-- V4L2 integration working ✅
-- Problem: ipu_bridge module has wrong vermagic (compiled against vanilla 6.17.9 instead of Arch 6.17.9-arch1-1)
-- Solution: Recompile ipu_bridge against Arch kernel headers
+set -e
 
-WHAT HAPPENED:
-The modified ipu_bridge module was compiled against vanilla kernel source (6.17.9)
-but your running kernel is Arch's patched version (6.17.9-arch1-1). This caused
-"Exec format error" when trying to load the module.
+echo "========================================"
+echo "  GC2607 Camera Initialization"
+echo "========================================"
+echo ""
 
-THE FIX:
-A new script (fix_ipu_bridge.sh) was created that properly compiles ipu_bridge
-against the Arch kernel headers at /lib/modules/6.17.9-arch1-1/build
+# Check if permissions are set up
+if ! groups | grep -q video; then
+    echo "⚠️  First time setup needed!"
+    echo ""
+    echo "Run: sudo ./setup_permissions.sh"
+    echo "Then log out and log back in."
+    echo ""
+    exit 1
+fi
 
-================================================================================
-STEPS TO RUN AFTER REBOOT:
-================================================================================
+echo "Step 1: Loading kernel modules..."
+sudo modprobe videodev
+sudo modprobe v4l2-async
+sudo modprobe ipu_bridge
+sudo modprobe intel-ipu6
+sudo modprobe intel-ipu6-isys
+sleep 2
 
-1. Navigate to the project directory:
-   cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
-
-2. Load required V4L2 modules first:
-   sudo modprobe videodev
-   sudo modprobe mc
-   sudo modprobe v4l2-async
-
-3. Run the fix script to recompile and install ipu_bridge:
-   ./fix_ipu_bridge.sh
-
-   This will:
-   - Modify ipu-bridge.c to add GC2607 support
-   - Compile against Arch kernel headers (correct vermagic)
-   - Backup existing module
-   - Install the new module
-   - Update dependencies
-
-4. Load the IPU6 modules in correct order:
-   sudo modprobe ipu_bridge
-   sudo modprobe intel-ipu6
-   sudo modprobe intel-ipu6-isys
-
-5. Load the GC2607 driver:
-   sudo insmod gc2607.ko
-
-6. Verify media devices exist:
-   ls -la /dev/media*
-
-7. THE BIG TEST - Check if GC2607 appears in media topology:
-   media-ctl --print-topology | grep -i gc2607
-
-8. If GC2607 is found, view full topology:
-   media-ctl -d /dev/media0 --print-topology
-
-9. Check kernel messages for any issues:
-   sudo dmesg | grep -E "ipu|gc2607|GCTI2607" | tail -40
-
-================================================================================
-EXPECTED SUCCESS INDICATORS:
-================================================================================
-✅ ipu_bridge loads without errors
-✅ /dev/media0 exists
-✅ intel-ipu6 and intel-ipu6-isys load successfully
-✅ GC2607 appears in media topology output
-✅ Sensor is connected to IPU6 CSI-2 receiver
-
-If successful, Phase 5 is COMPLETE!
-
-================================================================================
-TROUBLESHOOTING:
-================================================================================
-
-If ipu_bridge still won't load:
-- Check vermagic: modinfo ipu_bridge | grep vermagic
-  Should show: 6.17.9-arch1-1 SMP preempt mod_unload
-
-If module vermagic is still wrong:
-- The script may have failed
-- Check script output for errors
-- Manually inspect: /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst
-
-To restore original ipu_bridge if needed:
-- Backups are at: /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst.backup.*
-- sudo cp [backup-file] /lib/modules/6.17.9-arch1-1/kernel/drivers/media/pci/intel/ipu-bridge.ko.zst
-- sudo depmod -a
-
-================================================================================
-QUICK START (copy/paste friendly):
-================================================================================
-
+echo "Step 2: Loading GC2607 driver..."
 cd /home/abbood/dev/camera-driver-dev/gc2607-v4l2-driver
-sudo modprobe videodev mc v4l2-async
-./fix_ipu_bridge.sh
-sudo modprobe ipu_bridge intel-ipu6 intel-ipu6-isys
-sudo insmod gc2607.ko
-ls -la /dev/media*
-media-ctl --print-topology | grep -i gc2607
-media-ctl -d /dev/media0 --print-topology
 
-================================================================================
+# Unload if already loaded
+if lsmod | grep -q gc2607; then
+    echo "  Driver already loaded, reloading..."
+    media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[0]' 2>/dev/null || true
+    sleep 1
+    sudo modprobe -r intel-ipu6-isys 2>/dev/null || true
+    sudo modprobe -r intel-ipu6 2>/dev/null || true
+    sleep 1
+    sudo modprobe intel-ipu6
+    sudo modprobe intel-ipu6-isys
+    sleep 1
+fi
+
+sudo insmod gc2607.ko
+sleep 2
+
+echo "Step 3: Configuring camera formats..."
+media-ctl -d /dev/media0 -V '"Intel IPU6 CSI2 0":0 [fmt:SGRBG10_1X10/1920x1080]'
+media-ctl -d /dev/media0 -V '"Intel IPU6 CSI2 0":1 [fmt:SGRBG10_1X10/1920x1080]'
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1920,height=1080,pixelformat=BA10
+media-ctl -d /dev/media0 -l '"Intel IPU6 CSI2 0":1 -> "Intel IPU6 ISYS Capture 0":0[1]'
+
+echo "Step 4: Setting optimal exposure/gain..."
+v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1335,analogue_gain=253
+
+echo ""
+echo "✅ Camera initialized successfully!"
+echo ""
+echo "Camera device: /dev/video0"
+echo "Control device: /dev/v4l-subdev6"
+echo ""
+echo "Current settings:"
+v4l2-ctl -d /dev/v4l-subdev6 --list-ctrls | grep -E "(exposure|gain)"
+echo ""
+echo "========================================"
+echo "  Next Steps"
+echo "========================================"
+echo ""
+echo "Option 1: Create Virtual RGB Camera for OBS/Meet"
+echo "  ./create_virtual_camera.sh"
+echo "  Then use /dev/video10 in OBS Studio"
+echo ""
+echo "Option 2: Quick Capture Test"
+echo "  ./quick_capture.sh"
+echo ""
+echo "Option 3: Adjust Settings Live"
+echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl exposure=1200"
+echo "  v4l2-ctl -d /dev/v4l-subdev6 --set-ctrl analogue_gain=240"
+echo ""
+echo "========================================"
+echo ""
+echo "Status: PHASE 7 COMPLETE ✅"
+echo "  - Exposure/Gain controls working"
+echo "  - White balance fixed (use view_raw_improved.py)"
+echo "  - Optimal defaults: exposure=1335, gain=253"
+echo "  - Ready for OBS Studio and video apps"
+echo ""

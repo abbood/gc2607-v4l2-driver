@@ -24,7 +24,10 @@
       "Bash(pacman:*)",
       "Bash(v4l2-ctl:*)",
       "Bash(media-ctl:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(../view_raw_bright.py temp.raw 1.0)",
+      "Bash(ffmpeg:*)",
+      "Bash(./view_raw_bright.py:*)"
     ]
   }
 }

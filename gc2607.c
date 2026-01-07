@@ -44,9 +44,9 @@
 #define GC2607_EXPOSURE_DEFAULT		1300	/* Optimal brightness */
 
 #define GC2607_GAIN_MIN			0x40	/* 1x gain */
-#define GC2607_GAIN_MAX			0xff	/* ~4x gain (simplified) */
+#define GC2607_GAIN_MAX			0xff	/* ~4x gain */
 #define GC2607_GAIN_STEP		1
-#define GC2607_GAIN_DEFAULT		220	/* Optimal brightness */
+#define GC2607_GAIN_DEFAULT		253	/* Optimal from testing */
 
 /* Sensor timing - from reference driver */
 #define GC2607_PIXEL_RATE		(672000000LL / 10 * 2)  /* 134.4 MHz */
@@ -61,6 +61,40 @@ struct gc2607_regval {
 	u16 addr;
 	u8 val;
 };
+
+/* Gain lookup table entry - from reference driver */
+struct gc2607_gain_lut {
+	u8 reg2b3;
+	u8 reg2b4;
+	u8 reg20c;
+	u8 reg20d;
+};
+
+/* Gain lookup table for optimal noise performance
+ * Using 4 registers together provides better image quality than single register
+ * Table from reference driver - maps gain levels to register combinations
+ */
+static const struct gc2607_gain_lut gc2607_gain_table[] = {
+	{0x00, 0x00, 0x00, 0x40},  /* Gain index 0  - lowest gain */
+	{0x05, 0x00, 0x00, 0x4b},  /* Gain index 1 */
+	{0x00, 0x01, 0x00, 0x59},  /* Gain index 2 */
+	{0x05, 0x01, 0x00, 0x6a},  /* Gain index 3 */
+	{0x00, 0x02, 0x00, 0x80},  /* Gain index 4 */
+	{0x05, 0x02, 0x00, 0x97},  /* Gain index 5 */
+	{0x00, 0x03, 0x00, 0xb3},  /* Gain index 6 */
+	{0x05, 0x03, 0x00, 0xd4},  /* Gain index 7 */
+	{0x00, 0x04, 0x01, 0x00},  /* Gain index 8 */
+	{0x05, 0x04, 0x01, 0x2f},  /* Gain index 9 */
+	{0x00, 0x05, 0x01, 0x66},  /* Gain index 10 */
+	{0x05, 0x05, 0x01, 0xa8},  /* Gain index 11 */
+	{0x00, 0x06, 0x02, 0x00},  /* Gain index 12 */
+	{0x05, 0x06, 0x02, 0x5e},  /* Gain index 13 */
+	{0x09, 0x26, 0x02, 0xcc},  /* Gain index 14 */
+	{0x0c, 0xb6, 0x03, 0x50},  /* Gain index 15 */
+	{0x10, 0x06, 0x04, 0x00},  /* Gain index 16 - highest gain */
+};
+
+#define GC2607_GAIN_TABLE_SIZE ARRAY_SIZE(gc2607_gain_table)
 
 /* Sensor mode structure */
 struct gc2607_mode {
@@ -603,16 +637,34 @@ static int gc2607_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 	case V4L2_CID_ANALOGUE_GAIN:
-		/* Simplified gain control - just use high byte register */
-		/* Full implementation would use LUT for all 4 registers */
-		ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_H,
-				       ctrl->val & 0xff);
-		if (ret)
-			break;
-		/* Set other gain registers to safe values */
-		ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_L, 0x00);
-		if (!ret)
-			dev_dbg(&client->dev, "Set gain to 0x%02x\n", ctrl->val);
+		/* Hybrid approach: Use LUT for lower gains (better noise),
+		 * direct register writes for very high gains (needed for dark rooms)
+		 */
+		if (ctrl->val <= 0x80) {
+			/* Map gain value 0x40-0x80 to LUT indices 0-8 for lower noise */
+			int lut_index = ((ctrl->val - 0x40) * 8) / (0x80 - 0x40);
+			if (lut_index < 0) lut_index = 0;
+			if (lut_index >= GC2607_GAIN_TABLE_SIZE) lut_index = GC2607_GAIN_TABLE_SIZE - 1;
+
+			const struct gc2607_gain_lut *lut = &gc2607_gain_table[lut_index];
+			ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_H, lut->reg2b3);
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_L, lut->reg2b4);
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_DGAIN_H, lut->reg20c);
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_DGAIN_L, lut->reg20d);
+
+			if (!ret)
+				dev_dbg(&client->dev, "Set gain %d via LUT[%d]\n", ctrl->val, lut_index);
+		} else {
+			/* For high gains (>0x80), use direct register writes for maximum brightness */
+			ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_H, ctrl->val & 0xff);
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_AGAIN_L, 0x00);
+			/* Also boost digital gain for very high analog gain */
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_DGAIN_H, 0x04);
+			if (!ret) ret = gc2607_write_reg(gc2607, GC2607_REG_DGAIN_L, 0x00);
+
+			if (!ret)
+				dev_dbg(&client->dev, "Set gain %d (direct, high gain mode)\n", ctrl->val);
+		}
 		break;
 
 	default:
