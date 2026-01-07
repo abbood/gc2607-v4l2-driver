@@ -305,6 +305,7 @@ Contributions welcome! Areas of interest:
 - Other GalaxyCore sensors (GC1029, etc.)
 - Testing on different hardware platforms
 - OBS Studio plugin for native Bayer support
+- Special thanks to [yegor-alexeyev](https://github.com/yegor-alexeyev) for suggesting that the Matebook Pro 2024 VGHH-XX has the GC2607 sensor in [this post](https://github.com/intel/ipu6-drivers/issues/399#issuecomment-3707318638)
 
 ## Acknowledgments
 
